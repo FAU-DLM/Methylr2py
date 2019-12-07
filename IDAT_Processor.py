@@ -371,7 +371,7 @@ class PreProcessIDATs:
         
         
         
-    def load_idats(self, use_cache=False, rename_samples=True):
+    def load_idats(self, use_cache=False, rename_samples=True, parallel=True, nworkers=2, verbose=True, extended=True):
         """For minfi pipeline, load IDATs from specified idat_dir."""
         
         #from methylprep.files import get_sample_sheet, find_sample_sheet
@@ -382,8 +382,13 @@ class PreProcessIDATs:
         
         if use_cache:
             self.RGset=robjects.r('readRDS')(cache_storage_path)            
-        else:            
-            self.RGset = self.minfi.read_metharray_exp(targets=self.pheno, extended=True)
+        else:
+            if parallel:
+                self.RGset=self.load_idats_parallel(targets=self.pheno,verbose=verbose,extended=extended,nworkers=nworkers)
+                
+            else:    
+                self.RGset = self.minfi.read_metharray_exp(targets=self.pheno, extended=extended)
+                
         
         if rename_samples:
             self.rename_samples()            
@@ -393,17 +398,31 @@ class PreProcessIDATs:
             
         if not use_cache:
             robjects.r('saveRDS')(self.RGset,cache_storage_path) 
-            
-        return pd.DataFrame(pandas2ri.ri2py(self.pheno))    
+        self.RGset_orig=self.RGset    
+        self.pheno_orig=self.pheno
+        self.pheno_orig_py=self.ri2py_dataframe(self.pheno_orig, matrix=True)
+        #return pd.DataFrame(pandas2ri.ri2py(self.pheno))    
     
     
-    def load_idats_parallel(self, targets, verbose=True, extended=True, nworkers=1 ):
-        targets=self.pheno
+    def load_idats_parallel(self, targets, verbose=True, extended=True, nworkers=2 ):
+        targets=targets
         verbose=verbose
         nworkers=nworkers
-        self.RGset= robjects.r("""function (targets, verbose, extended, nworkers) {
-            read.metharray.exp.par <- function(targets=targets, verbose = verbose, extended=extended, nworkers=nworkers) {
+        extended=extended
+        RGset= robjects.r("""function (targets, verbose, extended, nworkers) {
+            read.metharray.exp.par <- function(targets=targets, verbose = verbose, extended=extended, n_workers=nworkers, ...) {
+                library(BiocParallel)
                 nworkers <- bpworkers(bpparam())
+                
+                if (n_workers<=nworkers) {
+                        nworkers=n_workers
+                      }
+                else {
+                        nworkers=nworkers
+                     }   
+                param<-MulticoreParam(workers=nworkers)
+                #cat(nworkers)               
+                
                 if (nworkers <= 1)
                     stop("Did you registered a biocparallel back-end?")
                 y <- rep(1, ceiling(nrow(targets)/nworkers))
@@ -415,25 +434,28 @@ class PreProcessIDATs:
                     ##these need to be loaded on the worker nodes explicitly for BatchJobs!
                     requireNamespace("minfi")
                     requireNamespace("Biobase")
-                    read.metharray.exp(targets = x, ...)
+                    read.metharray.exp(targets = x, extended=extended)
                 }
 
-                message("Reading multiple idat-files in parallel")
-                res <- bplapply(jobs, FUN = fun, ...)
-                if(verbose)
-                    message(str(res))
-                message("Combining the RGsets to one big RGset")
+                if(verbose)cat("Reading multiple idat-files in parallel")
+                res <- bplapply(jobs, FUN = fun, BPPARAM = param)
+                combine <- minfi::combine
+                #if(verbose)
+                #    message(str(res))
+                if(verbose)cat("Combining the RGsets to one big RGset")
                 rgSet <- res[[1]]
-                for (i in 2:nworkers) rgSet <- combine(rgSet, res[[i]])
+                
+                for (i in 2:length(res)) rgSet <- combine(rgSet, res[[i]])
                 return(rgSet)
             }
         
-            rgSet<-read.metharray.exp.par(targets=targets, verbose = verbose, extended=extended, nworkers=nworkers)
+            rgSet<-read.metharray.exp.par(targets=targets, verbose = verbose, extended=extended, n_workers=nworkers)
         
         
             
-            return(rgset)
+            return(rgSet)
             }""")(targets, verbose, extended, nworkers)
+        return RGset
         
             
 
@@ -616,7 +638,7 @@ class PreProcessIDATs:
         if plot== 'all':    
             
             
-            fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(20,5))    
+            #fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(20,5))    
             ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
             ax2 = sns.barplot(x=detP_keep_py.columns, y=detP_keep_py.mean(axis=0).to_numpy(), ax=ax2)
             ax3 = sns.barplot(x=detP_fails_py.columns, y=detP_fails_py.mean(axis=0).to_numpy(), ax=ax3)
@@ -634,6 +656,7 @@ class PreProcessIDATs:
             ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
             ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
             ax3.set_xticklabels(ax3.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
+            plt.tight_layout()
             plt.show()
             return detP_py
         
@@ -643,7 +666,7 @@ class PreProcessIDATs:
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
                 dataframe=dataframe.transpose()  
-            fig, ax = plt.subplots(figsize=(20, 7))
+            #fig, ax = plt.subplots(figsize=(20, 7))
             fig.subplots_adjust=0.85
             ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
             if log_scale:
@@ -651,7 +674,7 @@ class PreProcessIDATs:
             ax.axhline(detPcut, ls='--')    
             ax.set_title('All Samples') 
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')          
-            
+            plt.tight_layout()
             plt.show()  
             return
             
@@ -660,13 +683,14 @@ class PreProcessIDATs:
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
                 dataframe=dataframe.transpose()  
-            fig, ax = plt.subplots()     
+            #fig, ax = plt.subplots()     
             ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
             if log_scale:
                 ax.set_yscale('log')
             ax.axhline(detPcut, ls='--')    
             ax.set_title('Bad Samples') 
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
+            plt.tight_layout()
             plt.show()   
             return
             
@@ -675,13 +699,14 @@ class PreProcessIDATs:
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
                 dataframe=dataframe.transpose()  
-            fig, ax = plt.subplots()     
+            #fig, ax = plt.subplots()     
             ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
             if log_scale:
                 ax.set_yscale('log')
             ax.axhline(detPcut, ls='--')    
             ax.set_title('Good Samples')
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
+            plt.tight_layout()
             plt.show()   
             return
             
@@ -690,35 +715,154 @@ class PreProcessIDATs:
             'either "all" "allsamples" "badsamples" or "goodsamples" may be specified')
             return
     
-    def plt_mean_vals(self, matrix, pheno, group, nrows=1):
+    def plt_curves(self, matrix=None, pheno=None, variant="grouped", group_by=None, nrows=1):
         
+        if pheno is None:
+            pheno=self.pheno_orig_py
         import matplotlib.pyplot as plt
         import seaborn as sns
         import copy
+        from seaborn import cubehelix_palette
         fig, ax = plt.subplots() 
-        group_list=pheno[group].unique().tolist()
+        fig.tight_layout() 
+        from collections import OrderedDict
+        import matplotlib.pyplot as plt
+
+        cmap=sns.color_palette('muted') 
+        
         if type(matrix)==dict:
             #print('dict')
-            for i, (key, matr) in enumerate(matrix.items()):
-                #print(len(betas))
-                matr=copy.deepcopy(matr.transpose())
-                plt.subplot(nrows, len(matrix), i+1)
-                for val in group_list:
-                    #print(val)
-                    sns.distplot(matr[np.array(pheno[group]==val)].mean(), label=val, hist=False)
-                plt.xlabel('matrix- values')
-                plt.ylabel('density')
-                plt.title(key)
-            plt.show()
+            if (variant=="grouped"):
+                
+                for i, (key, matr) in enumerate(matrix.items()):
+                    #print(len(betas))  
+                    pheno=pheno[pheno['ID'].isin(matr.columns.to_numpy())]
+                    group_list=pheno[group_by].unique().tolist()
+                    matr=copy.deepcopy(matr.transpose())
+                    c=len(matrix)/nrows
+                    if nrows >= 1:
+                        ind=i+1                        
+                    plt.subplot(nrows, c, ind)
+                    if nrows > 1:
+                        if ind==nrows:
+                            ind=0                        
+                    for val in group_list:
+                        #print(val)
+                        sns.distplot(matr[np.array(pheno[group_by]==val)].mean(), label=val, hist=False)
+                    plt.xlabel('curve-values')
+                    plt.ylabel('density')
+                    plt.title(key)
+                    handles, labels = plt.gca().get_legend_handles_labels()
+                    by_label = OrderedDict(zip(labels, handles))
+                    plt.legend(by_label.values(), by_label.keys())
+                plt.tight_layout()    
+                plt.show()
+            elif(variant=="single"):
+                for i, (key, matr) in enumerate(matrix.items()):
+                    #print(len(betas))
+                    pheno=pheno[pheno['ID'].isin(matr.columns.to_numpy())]
+                    matr=copy.deepcopy(matr)
+                    c=len(matrix)/nrows
+                    if nrows >= 1:
+                        ind=i+1                        
+                    plt.subplot(nrows, c, ind)
+                    if nrows > 1:
+                        if ind==nrows:
+                            ind=0                      
+                    #print(matr)
+                    #label=val,    
+                    #print(len(matr.columns))
+                    colors = ['#2300A8', '#00A658','#1f77b4', '#ff7f0e', 
+                       '#d62728', '#9467bd', '#8c564b', 
+                      '#e377c2', '#7f7f7f', '#bcbd22', '#17becf','yellow','#070d0d', '#8ffe09']
+
+                    colordict={}
+                    for items, values in zip(pheno[group_by].unique().tolist(), colors):
+                        colordict[items]=values
+                                        
+                    for col in matr.columns:
+                        #print(pheno[group_by][pheno['ID']==col].to_numpy())
+                        label=pheno[group_by][pheno['ID']==col].to_numpy()[0]
+                        #print(matr[col])
+                        if len(matr.columns) <= 30:
+                            sns.distplot(
+                                matr[col], hist=False, rug=False, label=label,
+                                color=colordict[label])
+                        else:
+                            sns.distplot(
+                                matr[col], hist=False, rug=False,label=label, color=colordict[label])
+                    #sns.distplot(matr.to_numpy(),  hist=False)
+                    plt.xlabel('curve-values')
+                    plt.ylabel('density')
+                    plt.title(key)
+                    handles, labels = plt.gca().get_legend_handles_labels()
+                    by_label = OrderedDict(zip(labels, handles))
+                    plt.legend(by_label.values(), by_label.keys())
+                #plt.legend()   
+                plt.tight_layout()
+                plt.show()
+                
+                
         else:
             print('Please provide dataframes in key value dict manner, where the key is the label of the plot and the values is the ' 
                   'dataframe')
-        return        
+              
     
+    def getM(self,Object=None):
+        if Object:
+            Object=Object
+        else:
+            Object=self.RGset
+            
+        mvals_py, mvals=self.compute_mvals(Object)    
+        return mvals_py, mvals
+        #mat <- getM(preprocessRaw(RGset), ...)
+        
+    
+    
+    def getBeta(self,Object=None):
+        if Object:
+            Object=Object
+        else:
+            Object=self.RGset
+            
+        betas_py,betas=self.compute_betas(Object) 
+        return betas_py, betas
+        #mat <- getBeta(RGset)
+    
+    
+    def compute_betas(self, Object):
+        """Get beta value matrix from minfi after finding RSet."""       
+                
+        beta = self.minfi.getBeta(Object)
+        beta_py = self.ri2py_dataframe(beta)
+        
+        return beta_py , beta   
+    
+    def compute_mvals(self, Object):
+        """Get mvalue matrix from minfi after finding RSet."""    
+        
+        rgset = robjects.r("""function (obj) {             
+             if(class(obj) == "RGChannelSet" | class(obj) == "RGChannelSetExtended"  ){                    
+                    return(TRUE)  
+                    }
+                    else{
+                    return(FALSE)
+                    }             
+            }""")(Object) 
+
+        if pandas2ri.ri2py(rgset):
+            mval = self.minfi.getM(self.minfi.preprocessRaw(Object))        
+        
+        else:
+            mval = self.minfi.getM(Object)
+        mval_py = self.ri2py_dataframe(mval)
+        
+        return mval_py ,mval 
           
-    def detectionP(self):
+    def detectionP(self, RGset=None):
         # calculate the detection p-values
-        self.detP =robjects.r("detectionP")(self.RGset) 
+        self.detP =robjects.r("detectionP")(RGset) 
         #detP_py=pd.DataFrame(pandas2ri.ri2py(self.detP),
         #        index=numpy2ri.ri2py(robjects.r("rownames")(self.detP)),
         #        columns=numpy2ri.ri2py(robjects.r("colnames")(self.detP))).transpose()
@@ -751,34 +895,42 @@ class PreProcessIDATs:
                             pdf = "{}/qcReport.pdf".format(output_dir))
         
         
-    def remove_badsamples(self, badSampleCutoff=10, detPcut=0.01, cutsamples=0.1, addQC=False, verbose=True):
+    def remove_badsamples(self, badSampleCutoff=10,rm_badsamples=False, detPcut=0.01, cutsamples=0.1, addQC=False, verbose=True, RGset=None):
         ''' 
         excluding samples if avarage of unmeth and meth values is below 10
         and if detectionP probe wise threshold is below 0,01(detPcut) 
         and fraction of affected probes for a given sample is above 0.1 (cutsamples)
              
         '''
+        
+        if RGset:
+            RGset=RGset
+        else:
+            RGset=self.RGset
+            
         MSet,qc, datfr = self.getQC(addQC=addQC)
         #print(qc)    
-        self.RGset, self.pheno = robjects.r("""function (rgset, qc, badSampleCutoff, detPcut, cutsamples, verbose) {
+        self.RGset, self.pheno = robjects.r("""function (rgset, qc, badSampleCutoff, detPcut, cutsamples, verbose, rm_badsamples) {
             
             #### meth and unmeth filtering ##########
             #MSet<-preprocessRaw(rgset)
             #qc <- getQC(MSet)
-            meds <- (qc$uMed + qc$mMed) / 2            
-            keepIndex <- which(meds > badSampleCutoff)            
-            if (length(keepIndex) == 0) {
-                stop("All samples found to be bad")
-            }
-            if (length(keepIndex) < ncol(rgset)) {               
-                if(verbose){
-                    cat(
-                        sprintf("Found and removed %s bad samples",
-                                ncol(rgset) - length(keepIndex)))
+            if (rm_badsamples)
+            {
+                meds <- (qc$uMed + qc$mMed) / 2            
+                keepIndex <- which(meds > badSampleCutoff)            
+                if (length(keepIndex) == 0) {
+                    stop("All samples found to be bad")
                 }
-                rgset <- rgset[, keepIndex]
+                if (length(keepIndex) < ncol(rgset)) {               
+                    if(verbose){
+                        cat(
+                            sprintf("Found and removed %s bad samples",
+                                    ncol(rgset) - length(keepIndex)))
+                    }
+                    rgset <- rgset[, keepIndex]
+                }
             }
-            
             
             ####  detP filtering  ########                
             
@@ -817,7 +969,7 @@ class PreProcessIDATs:
            result=list(rgset, pheno)
            return(result)                       
             
-            }""")(self.RGset, qc, badSampleCutoff, detPcut, cutsamples, verbose) 
+            }""")(RGset, qc, badSampleCutoff, detPcut, cutsamples, verbose, rm_badsamples) 
                
         
     #### probe wise QC filtering ######
@@ -916,14 +1068,7 @@ class PreProcessIDATs:
                              annotation = annotation(RGset)                        
                              )
 
-                #RGset<-RGChannelSetExtended(Green = Grn, Red = Red,
-                #             colData = colData(RGset),
-                #             annotation = annotation(RGset),                         
-                #             RedSD = RedSD,
-                #             GreenSD = GreenSD,
-                #             NBeads = beadmat                     
-
-                #             )
+                
 
             }
 
@@ -1130,9 +1275,9 @@ class PreProcessIDATs:
 
     def insert_cell_types(self):
             celltypes=pd.DataFrame(pandas2ri.ri2py(self.NeunC), columns=['Glia','Neurons'])
-            pheno=pd.concat([pandas2ri.ri2py(robjects.r['as'](self.pheno,'data.frame')), celltypes], axis=1, sort=False)
+            #pheno=pd.concat([pandas2ri.ri2py(robjects.r['as'](self.pheno,'data.frame')), celltypes], axis=1, sort=False)
             celltypes_ri=pandas2ri.py2ri(celltypes)  
-            self.pheno=pandas2ri.py2ri(pheno)    
+            #self.pheno=pandas2ri.py2ri(pheno)    
             self.RGset,self.GRset, self.pheno=robjects.r("""function (RGset,GRset, celltypes) {        
                 .pDataAdd <- function(object, df) {
                     stopifnot(is(df, "data.frame") || is(df, "DataFrame"))
@@ -1198,71 +1343,154 @@ class PreProcessIDATs:
             GRset=GRset
         else:
             GRset=self.GRset
-        self.GRset = robjects.r("""function (grset) {        
+        GRset = robjects.r("""function (grset) {             
+             if(class(grset) != "GenomicRatioSet")
+                    stop("The object should be of class 'GenomicRatioSet'!")
              grsetFlt <- dropLociWithSnps(grset)             
              return(grsetFlt)
             }""")(GRset)
-        return self.GRset
+        return GRset
     
-    def dropSexRelatedProbes(self, GRset=None, obj=None):
-        # if your data includes males and females, remove probes on the sex chromosomes
-         
-        if GRset:
-            GRset=GRset
-        else:
-            GRset=self.GRset
-        
-        self.GRset = robjects.r("""function (grset) {   
-            ann450k <- getAnnotation(grset)
-            keep <- !(featureNames(grset) %in% ann450k$Name[ann450k$chr %in% 
-                                                                    c("chrX","chrY")])
-            grsetFlt <- grset[keep,]    
-            return(grsetFlt)
-            }""")(GRset)
-        return self.GRset
-        
+    def filterXY(self, obj=None):
+        # if your data includes males and females, remove probes on the sex chromosomes 
+        self.get_annotation()
+        obj = robjects.r("""function (obj,ann) {               
+            keep <- !(rownames(obj) %in% ann$Name[ann$chr %in% c("chrX","chrY")])
+            obj <- obj[keep,]    
+            return(obj)
+            }""")(obj, self.annotation)
+        return obj
     
-    def excludeXreactiveprobes(self, GRset=None, obj=None, array_type='EPIC'):  
+    def filterNoCG(self, obj=None, verbose=True):
+        obj = robjects.r("""function (obj, verbose) {             
+            if(verbose)cat("\n  Filtering NoCG Start")
+            RemainProbe <- substr(rownames(obj),1,2) == "cg"
+            if(verbose)cat("    Only Keep CpGs, removing ", sum(RemainProbe == FALSE) ," probes from the analysis.")
+            bj <- obj[RemainProbe,]               
+            return(obj)
+            }""")(obj, verbose)
+        return obj
+    
+    def excludeXreactiveprobes(self, obj=None, array_type='EPIC'):  
         import methylcheck
-        if GRset:
-            GRset=GRset
-        else:
-            GRset=self.GRset
-            
+                    
         k450_criteria = ['Chen2013', 'Price2013', 'Naeem2014', 'DacaRoszak2015',
                     'Polymorphism', 'CrossHybridization', 'BaseColorChange', 'RepeatSequenceElements']
         EPIC_criteria = ['McCartney2016', 'Zhou2016', 'Polymorphism', 'CrossHybridization', 'BaseColorChange', 'RepeatSequenceElements']
 
         if array_type=='450k':
-            print('450k')
+            #print('450k')
             for crit in k450_criteria:
-                print(crit, len(methylcheck.list_problem_probes('450k', [crit])))
-            criteria= k450_criteria         
+                #print(crit, len(methylcheck.list_problem_probes('450k', [crit])))
+                criteria= k450_criteria         
         elif array_type=='EPIC':            
-            print('EPIC')
+            #print('EPIC')
             for crit in EPIC_criteria:
-                print(crit, len(methylcheck.list_problem_probes('EPIC', [crit])))
-            criteria= EPIC_criteria          
+                #print(crit, len(methylcheck.list_problem_probes('EPIC', [crit])))
+                criteria= EPIC_criteria          
 
         sketchy_probes_list = methylcheck.list_problem_probes(array=array_type, criteria=criteria)
             #df2 = methylcheck.exclude_probes(betaquant_5000, sketchy_probes_list)
         sketchy_probes_array=pd.DataFrame(np.array(sketchy_probes_list), columns=['TargetID'])    
         xReactiveProbes=pandas2ri.py2ri(sketchy_probes_array)
 
-        self.GRset = robjects.r("""function (grset, xReactiveProbes) {  
+        obj = robjects.r("""function (obj, xReactiveProbes) {  
                     #xReactiveProbes <- read.csv(file=paste(dataDirectory,
                                                           # "48639-non-specific-probes-Illumina450k.csv",
                                                            #sep="/"), stringsAsFactors=FALSE)
-                    keep <- !(featureNames(grset) %in% xReactiveProbes$TargetID)
-                    grsetFlt <- grset[keep,]                     
-                    return(grsetFlt)
-                        }""")(GRset, xReactiveProbes)
-
-        return self.GRset    
+                    keep <- !(rownames(obj) %in% xReactiveProbes$TargetID)
+                    obj <- obj[keep,]                     
+                    return(obj)
+                        }""")(obj, xReactiveProbes)
+        return obj  
     
+    
+    def filterCpGs(self, obj=None, dropSnPs=True, GRset=True, filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, array_type='EPIC', verbose=True):
+        orig_obj=obj        
+        
+        rgset = robjects.r("""function (obj) {             
+             if(class(obj) == "RGChannelSet" | class(obj) == "RGChannelSetExtended"  ){                    
+                    return(TRUE)  
+                    }
+                    else{
+                    return(FALSE)
+                    }             
+            }""")(obj) 
+
+        if pandas2ri.ri2py(rgset):
+            print('Sorry this does not work with RGChannelSets, please use "GenomicRatioSet", "MethySets" or "RatioSets"! ')
+            return obj                 
+        
+        
+        if excludeXreactiveprobes:
+            if verbose:
+                print('Dropping cross- reactive probes')
+            obj=self.excludeXreactiveprobes(obj,array_type=array_type)      
+        if filterXY:
+            if verbose:
+                print('Dropping XY-Chromosome-related probes')
+            obj=self.filterXY(obj)    
+        if filterNoCG:            
+            obj=self.filterNoCG(obj=obj, verbose=verbose) 
+            
+        grset = robjects.r("""function (obj) {             
+            if(class(obj) == "GenomicRatioSet")
+                    return(TRUE)  
+             else return(FALSE)                
+            }""")(obj)   
+        
+        if dropSnPs and not pandas2ri.ri2py(grset):
+            if verbose:
+                print('sorry can not remove snps object need to be of type "GenomicRatioSet"...\n processing without performing snp removal')             
+        if dropSnPs and pandas2ri.ri2py(grset):
+            obj=self.dropLociWithSnps(GRset=obj)
+            self.GRset=obj                               
+                      
+        
+        mset = robjects.r("""function (obj) {             
+             if(class(obj) == "MethylSet")
+                    return(TRUE)    
+             else return(FALSE)                
+            }""")(obj)
+        if pandas2ri.ri2py(mset):   
+                  self.Mset=obj
+        
+        rset = robjects.r("""function (obj) {             
+             if(class(obj) == "RatioSet")
+                    return(TRUE)                         
+             else return(FALSE)
+            }""")(obj)
+        if pandas2ri.ri2py(rset):   
+                  self.Rset=obj           
+                  
+        
+        gmset = robjects.r("""function (obj) {             
+             if(class(obj) == "GenomicMethylSet")
+                    return(TRUE)                         
+             else return(FALSE)
+            }""")(obj)      
+        if pandas2ri.ri2py(gmset):   
+                  self.GMset=obj           
+        
+            
+        if verbose:    
+            robjects.r("""function (obj, orig_obj) { 
+                start = length(rownames(orig_obj))
+                left = length(rownames(obj))
+
+                cat("\n In total there were ",start," probes for the analysis before filtering.")
+
+                cat("\n",start-left," probes have been removed from further analysis.")
+
+                cat("\n In total there are",left," probes left for the analysis.")    
+
+                }""")(obj, orig_obj)            
+        
+        return obj
+       
    
     
-    def reduce(self, GRset=None, RGset=None, what="M", cutp=0.01, cutsamples=0.95, cutcpgs=0.95, verbose=True, autoimpute=True):
+    def reduce(self, GRset=None, RGset=None, what="both", cutp=0.01, cutsamples=0.95, cutcpgs=0.95, verbose=True, autoimpute=True):
         
         if GRset:
             GRset=GRset
@@ -1271,7 +1499,7 @@ class PreProcessIDATs:
         if RGset:
             RGset = RGset
         else:
-            RGset = self.RGset 
+            RGset = self.RGset_filt 
 
         obj, self.pheno = robjects.r("""function (GRset, RGset, what=c("beta", "M"), cutp, cutsamples, cutcpgs, verbose, autoimpute, ...) { 
 
@@ -1294,7 +1522,7 @@ class PreProcessIDATs:
             ##' @author mvaniterson
             ##' @export
             ##' @importFrom utils data
-            reduce <- function(GRset, RGset, what=c("beta", "M"), cutp=0.01, cutsamples=0.95, cutcpgs=0.95, verbose=TRUE, autoimpute, ...) {
+            reduce <- function(GRset, RGset, what=c("beta", "M", "both"), cutp=0.01, cutsamples=0.95, cutcpgs=0.95, verbose=TRUE, autoimpute, ...) {
 
                 what <- match.arg(what)
 
@@ -1322,10 +1550,19 @@ class PreProcessIDATs:
                     matfilt <- getM(preprocessRaw(RGset), ...)
                     matnorm <- getM(GRset, ...)
                 }
-                else {
+                if (what =="beta"){
                     matfilt <- getBeta(RGset, ...)
                     matnorm <- getBeta(GRset, ...)
                 }
+                else 
+                {  if(what=="both") 
+                    {
+                        matfiltbeta <- getBeta(RGset, ...)
+                        matfiltM <- getM(preprocessRaw(RGset), ...)
+                        matnormbeta <- getBeta(GRset, ...)
+                        matnormM <- getM(GRset, ...)
+                    }
+                }    
 
                 ##set max/min M-values to +/- 16
                 if(verbose & what=="M")
@@ -1333,42 +1570,95 @@ class PreProcessIDATs:
 
                 if(what == "M")
                     matnorm[!is.finite(matnorm)] <-  sign(matnorm[!is.finite(matnorm)])*16
+                    
+                if(verbose & what=="both")
+                    cat("Set +/-Inf to +/-16... \n")    
+                if(what == "both")
+                    matnormM[!is.finite(matnormM)] <-  sign(matnormM[!is.finite(matnormM)])*16    
 
                 ##set NA from probeFiltering
                 ##!!!NOTE orders are not the same
-                if(verbose)
-                     cat("On average", round(100*sum(is.na(matfilt))/prod(dim(matfilt)), 2),"% of the probes (",nrow(matfilt),") were set to NA in the probe filtering step! \n")
-                mid <- match(rownames(matfilt), rownames(matnorm))
-                matnorm <- matnorm[mid,]
-                matnorm[is.na(matfilt)] <- NA
+                
+                if(verbose & what!="both")
+                {
+                         cat("On average", round(100*sum(is.na(matfilt))/prod(dim(matfilt)), 2),"% of the probes (",nrow(matfilt),") were set to NA in the probe filtering step! \n")
+                    mid <- match(rownames(matfilt), rownames(matnorm))
+                    matnorm <- matnorm[mid,]
+                    matnorm[is.na(matfilt)] <- NA
 
-                ##set NA from detectionP
-                ##order seems OK just to be sure
-                mid <- match(rownames(matnorm), rownames(idPvalmat))
-                idPvalmat <- idPvalmat[mid,]
-                matnorm[idPvalmat] <- NA
+                    ##set NA from detectionP
+                    ##order seems OK just to be sure
+                    mid <- match(rownames(matnorm), rownames(idPvalmat))
+                    idPvalmat <- idPvalmat[mid,]
+                    matnorm[idPvalmat] <- NA
 
-                ##Replaced by gap_hunting
-                ##set chen CpGs/probes NA
-                ##if(verbose)
-                ##    message("Removing cross-reactive or polymorphic probes...")
+                    ##Replaced by gap_hunting
+                    ##set chen CpGs/probes NA
+                    ##if(verbose)
+                    ##    message("Removing cross-reactive or polymorphic probes...")
 
-                ##data("chen", package="Leiden450K")
-                ##matnorm[rownames(matnorm) %in% names(chenProbes),] <- NA
+                    ##data("chen", package="Leiden450K")
+                    ##matnorm[rownames(matnorm) %in% names(chenProbes),] <- NA
 
-                ##calculate success rates and reduce
-                if(verbose)
-                    cat("Calculate success rates and reduce... \n")
+                    ##calculate success rates and reduce
+                    if(verbose)
+                        cat("Calculate success rates and reduce... \n")
 
-                ##srCols <- apply(matnorm, 2, function(x) sum(!is.na(x))/(length(x) - 30969)) ##chen CpGs excluded
-                srCols <- apply(matnorm, 2, function(x) sum(!is.na(x))/(length(x)))
-                srRows <- apply(matnorm, 1, function(x) sum(!is.na(x))/length(x))
+                    ##srCols <- apply(matnorm, 2, function(x) sum(!is.na(x))/(length(x) - 30969)) ##chen CpGs excluded
+                    srCols <- apply(matnorm, 2, function(x) sum(!is.na(x))/(length(x)))
+                    srRows <- apply(matnorm, 1, function(x) sum(!is.na(x))/length(x))
 
-                if(verbose){
-                    cat("Percentage of samples having success rate above", cutsamples, "is", round(100*sum(srCols > cutsamples)/length(srCols),2),"% \n")
-                    cat("Percentage of CpGs having success rate above", cutcpgs, "is", round(100*sum(srRows > cutcpgs)/length(srRows),2),"% \n")
+                    if(verbose){
+                        cat("Percentage of samples having success rate above", cutsamples, "is", round(100*sum(srCols > cutsamples)/length(srCols),2),"% \n")
+                        cat("Percentage of CpGs having success rate above", cutcpgs, "is", round(100*sum(srRows > cutcpgs)/length(srRows),2),"% \n")
+                    }
+                    matnorms<-matnorm[srRows > cutcpgs,  srCols > cutsamples]
                 }
-                matnorms<-matnorm[srRows > cutcpgs,  srCols > cutsamples]
+                
+                if(verbose & what=="both")
+                {
+                      cat("On average", round(100*sum(is.na(matfiltbeta))/prod(dim(matfiltbeta)), 2),"% of the beta probes (",nrow(matfiltbeta),") were set to NA in the probe filtering step! \n")
+                    mid <- match(rownames(matfiltbeta), rownames(matnormbeta))
+                    matnormbeta <- matnormbeta[mid,]
+                    matnormbeta[is.na(matfiltbeta)] <- NA
+                    
+                    cat("On average", round(100*sum(is.na(matfiltM))/prod(dim(matfiltM)), 2),"% of the M probes (",nrow(matfiltM),") were set to NA in the probe filtering step! \n")
+                    mid <- match(rownames(matfiltM), rownames(matnormM))
+                    matnormM <- matnormM[mid,]
+                    matnormM[is.na(matfiltM)] <- NA
+
+                    ##set NA from detectionP
+                    ##order seems OK just to be sure
+                    mid <- match(rownames(matnormbeta), rownames(idPvalmat))
+                    idPvalmat <- idPvalmat[mid,]
+                    matnormbeta[idPvalmat] <- NA
+                    
+                    ##set NA from detectionP
+                    ##order seems OK just to be sure
+                    mid <- match(rownames(matnormM), rownames(idPvalmat))
+                    idPvalmat <- idPvalmat[mid,]
+                    matnormM[idPvalmat] <- NA
+
+                    
+                    ##calculate success rates and reduce
+                    if(verbose)
+                        cat("Calculate success rates and reduce... \n")
+
+                    srColsbeta <- apply(matnormbeta, 2, function(x) sum(!is.na(x))/(length(x)))
+                    srRowsbeta <- apply(matnormbeta, 1, function(x) sum(!is.na(x))/length(x))
+                    
+                    srColsM <- apply(matnormM, 2, function(x) sum(!is.na(x))/(length(x)))
+                    srRowsM <- apply(matnormM, 1, function(x) sum(!is.na(x))/length(x))
+
+                    if(verbose){
+                        cat("Percentage of beta samples having success rate above", cutsamples, "is", round(100*sum(srColsbeta > cutsamples)/length(srColsbeta),2),"% \n")
+                        cat("Percentage of beta CpGs having success rate above", cutcpgs, "is", round(100*sum(srRowsbeta > cutcpgs)/length(srRowsbeta),2),"% \n")
+                        cat("Percentage of M samples having success rate above", cutsamples, "is", round(100*sum(srColsM > cutsamples)/length(srColsM),2),"% \n")
+                        cat("Percentage of M CpGs having success rate above", cutcpgs, "is", round(100*sum(srRowsM > cutcpgs)/length(srRowsM),2),"% \n")
+                    }
+                    matnormsbeta<-matnormbeta[srRowsbeta > cutcpgs,  srColsbeta > cutsamples]
+                    matnormsM<-matnormM[srRowsM > cutcpgs,  srColsM > cutsamples]
+                }
                 
                 
                 
@@ -1400,8 +1690,15 @@ class PreProcessIDATs:
                             cat("    Doing imputation on matrix.")
                             }
                          library(impute)
-                         matnorms <- impute.knn(matnorms,k=5)$data 
-                               
+                         if (what!="both")
+                         {
+                             matnorms <- impute.knn(matnorms,k=5)$data 
+                         }
+                         else
+                         {
+                             matnormsM <- impute.knn(matnormsM,k=5)$data
+                             matnormsbeta <- impute.knn(matnormsbeta,k=5)$data
+                         }
                          sink(type="message")
                          sink()                       
 
@@ -1409,30 +1706,357 @@ class PreProcessIDATs:
                 }
                          
                 
-
-                result=list(matr=matnorms)
+                if (what!="both")
+                {
+                  result=list(matr=matnorms)
+                }
+                else
+                {
+                    result=list(matrM=matnormsM, matrbeta=matnormsbeta)
+                }
+                
                 return(result)
             }
 
 
             object<-reduce(GRset, RGset, what, cutp, cutsamples, cutcpgs, verbose, autoimpute)
             pheno = pData(RGset)
-            keep <- match(colnames(object$matr), rownames(pheno))
-            pheno <- pheno[keep,]
-            result=list(object$matr, pheno)
+            if (what!="both")
+            {
+                keep <- match(colnames(object$matr), rownames(pheno))
+                pheno <- pheno[keep,]
+                result=list(object$matr, pheno)            
+            }
+            else
+            {
+                keep <- match(colnames(object$matrM), rownames(pheno))
+                pheno <- pheno[keep,]           
+                
+                result=list(object, pheno)
+            }
+            
             return (result) 
 
 
      }""")(GRset, RGset, what, cutp, cutsamples, cutcpgs, verbose, autoimpute)
+        
+        
+        if (what=="both"):
+            self.mval=obj[0]
+            self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
+            self.beta=obj[1]
+            self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)
+            return self.beta_py, self.mval_py
+        
+        elif(what=="M"):   
+            self.mval=obj
+            self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
+            return self.mval_py
+        
+        elif(what=="beta"):   
+            self.beta=obj
+            self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)  
+            return self.mval_py      
+    
+        
+    
+    
+    def dmp_finder(self,matrix, pheno, phenotype=None, adjust_vars=None, correction_vars=None, useCombat=False, sva=False, number=10000, pvalue=0.05, adjpval=1, save_csv=False, path=None ):  
+            from scipy.special import comb
+            if not phenotype:
+                print('Please specify a target of interest \n'
+                    'These are the available column names:')
+                print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
+                return None
+            try:
+                pheno_py=pd.DataFrame(pandas2ri.ri2py(pheno))
+            except:
+                pheno_py=pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame'))            
 
-        self.mval=obj
-        self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
-    
-    
-        return self.mval_py
-    
-    
-    
+            py_array=pheno_py[phenotype].unique()
+            r_array=numpy2ri.py2ri(py_array)
+            numeric=[]
+            categorical=[]
+            if adjust_vars:
+
+                if not type(adjust_vars)==list:
+                    print('Please provide a list specifying your adjustment variables obtained from the pheno_sheet \n')
+                    print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
+                    return None, None, None
+
+
+                for var in adjust_vars:
+
+                    if (pheno_py[var].dtype=='float64') or (pheno_py[var].dtype=='float32') or (pheno_py[var].dtype=='int'):
+
+                        numeric.append(var)
+                    else:    
+
+                        categorical.append(var)
+
+
+
+            adjust_vars=numeric+categorical  
+
+            numeric=[]
+            categorical=[]
+            if correction_vars:
+
+                if not type(correction_vars)==list:
+                    print('Please provide a list specifying your correction variables obtained from the pheno_sheet \n')
+                    print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
+                    return None, None, None
+
+
+                for var in correction_vars:
+
+                    if (pheno_py[var].dtype=='float64') or (pheno_py[var].dtype=='float32') or (pheno_py[var].dtype=='int'):
+
+                        numeric.append(var)
+                    else:    
+
+                        categorical.append(var)
+
+
+            correction_vars=numeric+categorical
+
+            contrasts=dict()
+            n = len(py_array)
+            k=0
+            for i in range(0,n):
+                #print(k)
+                for j in range(i+1,n):
+                    k+=1
+
+                    contrasts[k]= py_array[i]+"-"+py_array[j]
+
+
+            print('These are the possible pairwise groups for your comparisons \n %s' %(contrasts))
+            print('Enter your comparison of choice;- to get all comparisons type "all":')
+            coef = input()
+            if coef=='all':
+                print('you selected all')
+            else:
+                coef=int(coef)
+                max_coef=comb(len(py_array),2)
+                #print(int(max_coef))
+                if (coef>int(max_coef)):
+                    print('The maximum coefficient number for comparisons is %s' %(int(max_coef)))
+                    return 0,0   
+                else:
+                    print('You have chosen this comparison group: %s:%s' %(coef,contrasts[coef]))
+
+            if sva:
+                print('You have chosen to include surrogate variable analysis')  
+            print('You are adjusting for these variables: %s' % (adjust_vars))
+            print('You are correcting for these variables: %s' % (correction_vars))
+
+
+            self.get_annotation()     
+            #mod, mod0
+
+            self.dmps, data, dectest= robjects.r("""function ( pheno, phenotype, M,  ann, number, array, coef, pvalue, adjpval, adj_vars,corr_vars, sva,useCombat) 
+            {
+
+            phen <- as.factor(pheno[,c(phenotype)])
+
+
+            if (length(adj_vars>0))
+            {
+                form_mod <- as.formula(paste(" ~0+",phenotype,'+',paste(c(adj_vars),collapse=" + "),sep=""))
+                form_mod0 <- as.formula(paste(" ~",paste(c(adj_vars),collapse=" + "),sep="")) 
+            }
+            else
+            {
+                form_mod <- as.formula(paste(" ~0+",phenotype))
+                form_mod0 <- as.formula(paste(" ~1") )
+            }
+
+
+            mod<-model.matrix(form_mod,data=pheno)
+            colnames(mod)<- make.names(colnames(mod))
+            rownames(mod)<-make.names(rownames(mod))
+
+            mod0<-model.matrix(form_mod0,data=pheno)
+            colnames(mod0)<- make.names(colnames(mod0))
+            rownames(mod0)<-make.names(rownames(mod0))        
+
+            ####SVA#####
+
+            if (sva)
+            {    cat('creating model for SVA')
+                 n.sv = num.sv(M,mod,method="leek")
+
+                 svobj = sva(M,mod,mod0,n.sv=n.sv)
+
+                 modSv = cbind(mod,svobj$sv)
+                 colnames(modSv)<- make.names(colnames(modSv))
+                 rownames(modSv)<-make.names(rownames(modSv))
+            }
+
+            else
+            {
+                 cat('creating model')
+                 modSv = mod
+
+            }  
+
+            print(form_mod)
+            #print(form_mod0)
+
+
+            if(length(corr_vars)>0)
+            {   cat('Start correcting for batches')
+                if(useCombat)
+                {
+                  cat('Using ComBat function')
+                }
+                else
+                {
+                  cat('Using removeBatchEffect function')
+                }
+                M_2 <- M           
+
+                for(i in 1:length(corr_vars))
+                    {   
+                        batchname=toString(c(corr_vars[i]))
+                        cat("\n<< Start Correcting for ",batchname," >>")           
+
+                        batch=as.factor(pheno[,batchname])
+                        #print(batch)
+                        if(useCombat)
+                        {   
+                            M <- ComBat(dat=M,batch=batch,mod=modSv,par.prior=TRUE)
+                        }
+                        else
+                        {                           
+                            M = removeBatchEffect(M, batch=batch, design=modSv)
+                        }                    
+                    }                 
+             } 
+
+
+
+            fit <- lmFit(M,modSv)      
+
+
+
+            # create a contrast matrix for specific comparisons      
+            cat('Creating contrast matrix for experiment')            
+            design.pairs <- function(levels) {
+                                n <- length(levels)
+                                design <- matrix(0,n,choose(n,2))
+                                rownames(design) <- levels
+                                colnames(design) <- 1:choose(n,2)
+
+                                k <- 0
+                                for (i in 1:(n-1))
+                                for (j in (i+1):n) {
+                                    k <- k+1
+                                    design[i,k] <- 1
+                                    design[j,k] <- -1
+                                    colnames(design)[k] <- paste(phenotype,levels[i],"-",phenotype,levels[j],sep="")
+                                    }
+                                result<-list(des=design,cols=colnames(design), rows=rownames(design) )    
+                                return(result)    
+                                #design
+                                }         
+
+            matr <-design.pairs(make.names(array))
+
+
+            x <- matr$cols
+
+
+            contrast.matrix <-makeContrasts(contrasts=x, levels=modSv)        
+
+
+
+            fit2 <- contrasts.fit(fit, contrast.matrix)
+            fit2 <- eBayes(fit2)
+
+
+
+            # look at the numbers of DM CpGs at FDR < 0.05
+            cat('Computing statistics for experiment')    
+            dectest<- summary(decideTests(fit2, p.value=pvalue))           
+
+            cat('Aligning annotation')
+            #annSub <- ann[match(rownames(M),ann$Name),]
+            annSub <- ann[ann$Name %in% rownames(M),]
+            #annSub <- ann[match(rownames(fit2$coefficients),ann$Name),]
+
+            if (coef == 'all'){
+
+                            cat('Computing contrasts for experiment')           
+                            topresults <- c()             
+                            for (i in 1:choose(length(array),2)) {        
+                                #print(i)
+
+                                top<-topTable(fit2, genelist=annSub, coef=i,number=number, p.value=adjpval )
+
+                                topresults[[i]] <- top    
+
+                            }
+
+                            result=list(topresults,matr$des, dectest)
+                        }
+
+                        else{
+
+                            cat('Computing contrast for experiment') 
+                            top<-topTable(fit2, genelist=annSub, coef=coef, number=number, p.value=adjpval )   
+                            top<-list(top)
+                            result=list(top,matr$des,dectest)
+
+                        }     
+
+
+            return(result)                     
+
+
+
+
+           }""")  (pheno, 
+                   phenotype,                
+                   matrix,                
+                   self.annotation, 
+                   number, 
+                   r_array, 
+                   coef,
+                   pvalue,
+                   adjpval,
+                   adjust_vars,               
+                   correction_vars,
+                   sva,
+                   useCombat)     
+
+            self.dmps_list=[]
+            for elem in self.dmps:
+
+                self.dmps_list.append(pd.DataFrame(pandas2ri.ri2py(elem)))
+            lists=[]
+            for elements in self.dmps_list:            
+                for elem in elements['Name'].tolist():         
+                    lists.append(elem)  
+            self.dmps = list(dict.fromkeys(lists))          
+            self.contrastmatrix=self.ri2py_dataframe(data)
+
+            self.dectest=self.ri2py_dataframe(dectest)
+            ###to-do
+            if save_csv:
+                if path:
+                    for elem in self.dmps_list:
+
+
+                        elem.to_csv(path+'{}.csv'.format(i,contrasts[i]), index=False)
+                else:
+                    for i,elem in enumerate(self.dmps_list):
+
+
+                        elem.to_csv(self.idat_dir+'{}.csv'.format(i,contrasts[i]), index=False)
+
+            print('done') 
     
     
     
@@ -1521,26 +2145,7 @@ class PreProcessIDATs:
         return self.MSet
     
         
-    def compute_betas(self, Object):
-        """Get beta value matrix from minfi after finding RSet."""       
-                
-        self.beta = self.minfi.getBeta(Object)
-        self.beta_py = pd.DataFrame(numpy2ri.ri2py(self.beta),
-                     index=numpy2ri.ri2py(robjects.r("rownames")(Object)),
-                     columns=numpy2ri.ri2py(robjects.r("colnames")(Object)))
-        
-        return self.beta_py    
-    
-    def compute_mvals(self, Object):
-        """Get mvalue matrix from minfi after finding RSet."""       
-       
-        
-        self.mval = self.minfi.getM(Object)
-        self.mval_py = pd.DataFrame(numpy2ri.ri2py(self.mval),
-                     index=numpy2ri.ri2py(robjects.r("rownames")(Object)),
-                     columns=numpy2ri.ri2py(robjects.r("colnames")(Object)))
-        
-        return self.mval_py         
+           
     
         
     
@@ -1748,7 +2353,7 @@ class PreProcessIDATs:
     def ensure_ordering(self, cutoff=0.05):
         # ensure probes are in the same order in the mSetSq and detP objects
         # remove any probes that have failed in one or more samples
-        self.detectionP()
+        self.detectionP(RGset=self.RGset)
         self.GRset, self.detP, self.RGset = robjects.r("""function (grset, detP, cutoff, pheno, rgSet) {        
              detP <- detP[match(featureNames(grset),rownames(detP)),]
              keep <- rowSums(detP < cutoff) == ncol(grset) 
@@ -2181,633 +2786,4 @@ class PreProcessIDATs:
             #dmp=pandas2ri.ri2py(robjects.r['as'](dmp,'data.frame'))
             return dmp   
         
-    def dmp_finder(self,M_val, pheno, phenotype=None, adjust_vars=None, number=10000, pvalue=0.05, adjpval=1, save_csv=False, path=None):  
-        from scipy.special import comb
-        if not phenotype:
-            print('Please specify a target of interest \n'
-                'These are the available column names:')
-            print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
-            return None
-        try:
-            pheno_py=pd.DataFrame(pandas2ri.ri2py(pheno))
-        except:
-            pheno_py=pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame'))            
-       
-        py_array=pheno_py[phenotype].unique()
-        r_array=numpy2ri.py2ri(py_array)
-        numeric=[]
-        categorical=[]
-        if adjust_vars:
-            
-            if not type(adjust_vars)==list:
-                print('Please provide a list specifying your adjustment variables obtained from the pheno_sheet \n')
-                print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
-                return None, None, None
-            
-            
-            for var in adjust_vars:
-                
-                if (pheno_py[var].dtype=='float64') or (pheno_py[var].dtype=='float32') or (pheno_py[var].dtype=='int'):
-                    
-                    numeric.append(var)
-                else:    
-                    
-                    categorical.append(var)
-
-            if len(numeric)>3:
-                print('not good')
-                return
-
-
-        svas=numeric+categorical  
-        
-        contrasts=dict()
-        n = len(py_array)
-        k=0
-        for i in range(0,n):
-            #print(k)
-            for j in range(i+1,n):
-                k+=1
-                
-                contrasts[k]= py_array[i]+"-"+py_array[j]
-               
-        
-        print('These are the possible pairwise groups for your comparisons \n %s' %(contrasts))
-        print('Enter your comparison of choice;- to get all comparisons type "all":')
-        coef = input()
-        if coef=='all':
-            print('you selected all')
-        else:
-            coef=int(coef)
-            max_coef=comb(len(py_array),2)
-            #print(int(max_coef))
-            if (coef>int(max_coef)):
-                print('The maximum coefficient number for comparisons is %s' %(int(max_coef)))
-                return 0,0   
-            else:
-                print('You have chosen this comparison group: %s:%s' %(coef,contrasts[coef]))
-          
-        print('You are adjusting for these variables: %s' % (svas))
-       
-        self.get_annotation()     
-       
-       
-        self.dmps, data, dectest = robjects.r("""function ( pheno, phenotype, M,  ann, number, array, coef, pvalue, adjpval, svas) {
-    
-
-        phen <- factor(pheno[,c(phenotype)])
-        designnr<-length(svas)
-        #print(designnr)
-        if (designnr ==0){
-
-        ##none###############################
-        design <- model.matrix(~0+phen ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen))))
-        colnames(design) <- c(levels(phen))
-
-        }
-
-
-        if(designnr!=0){
-        facs <- list()
-
-        for (item in c(svas)){
-
-            #print(class(item))
-            #print(class(pheno[,c(item)]))
-            if(class(pheno[,c(item)])!='numeric'){
-            #print('here')
-            facs[[item]]<-factor(pheno[,c(item)])
-            }
-            else{
-            #print(item)
-            #print(class(pheno[,c(item)]))
-            facs[[item]]<-pheno[,item]
-            }
-        }
-
-        for(i in 1:length(facs)){  
-          assign(paste('factor', i, sep = ""), facs[[i]])  
-          #if (class(facs[[i]])=='numeric'){
-          #assign(paste('factorlevel', i, sep = ""), factor(facs[[i]]))
-         #  }
-        }
-
-        #formdf1 <- as.formula(paste("~0+", paste(c(phenotype, factor_name1)),collapse="+"))
-        #print(formdf1)
-
-        ##1#####################
-
-        if (designnr ==1){
-
-        if(class(factor1)=='numeric'){
-            design <- model.matrix(~0+phen+factor1 ,data=pheno, contrasts.arg=list(phen=diag(nlevels(phen))))
-
-            colnames(design) <- c(levels(phen),
-                                 c(names(facs[1])))
-            }
-
-        else{
-            design <- model.matrix(~0+phen+factor1 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-                           factor1=diag(nlevels(factor1))))
-
-            colnames(design) <- c(levels(phen),
-                                  levels(factor1))
-            }
-
-
-
-        }
-
-        ##2######################
-
-        if (designnr ==2){
-
-
-        if(class(factor2)=='numeric'){
-
-            design <- model.matrix(~0+phen+factor1+factor2 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen))))         
-
-            colnames(design) <- c(levels(phen),
-                                c(names(facs[1])), 
-                                c(names(facs[2])))
-
-
-            }
-        else if(class(factor1)=='numeric'){
-            design <- model.matrix(~0+phen+factor1+factor2 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                        factor2=diag(nlevels(factor2)) ))         
-
-            colnames(design) <- c(levels(phen),
-                                c(names(facs[1])), 
-                                levels(factor2))
-
-
-            }    
-
-
-        else{
-            design <- model.matrix(~0+phen+factor1+factor2 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-                           factor1=diag(nlevels(factor1)), 
-                           factor2=diag(nlevels(factor2)) ))
-
-            colnames(design) <- c(levels(phen),
-                                levels(factor1), 
-                                levels(factor2))
-
-            }
-        }
-
-        ##3######################
-
-        if (designnr ==3){
-        if(class(factor3)=='numeric'){
-             design <- model.matrix(~0+phen+factor1+factor2+factor3 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)))) 
-
-
-            colnames(design) <- c(levels(phen),
-                                c(names(facs[1])), 
-                                c(names(facs[2])), 
-                                c(names(facs[3]))
-                                )
-
-            }
-        else if(class(factor2)=='numeric'){
-            design <- model.matrix(~0+phen+factor1+factor2+factor3 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)),                
-
-                            factor3=diag(nlevels(factor3)) ))         
-
-            colnames(design) <- c(levels(phen),
-                                c(names(facs[1])), 
-                                c(names(facs[2])),
-                                levels(factor3)
-                                )
-            }
-
-        else if(class(factor1)=='numeric'){
-
-            design <- model.matrix(~0+phen+factor1+factor2+factor3 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                            factor2=diag(nlevels(factor2)),
-                            factor3=diag(nlevels(factor3))))         
-
-            colnames(design) <- c(levels(phen),
-                                c(names(facs[1])), 
-                                levels(factor2),
-                                levels(factor3)
-                                )
-
-
-            }    
-
-
-
-        else {    
-            design <- model.matrix(~0+phen+factor1+factor2+factor3 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-                       factor1=diag(nlevels(factor1)), 
-                       factor2=diag(nlevels(factor2)), 
-                       factor3=diag(nlevels(factor3)) ))
-
-            colnames(design) <- c(levels(phen),
-                                levels(factor1),
-                                levels(factor2), 
-                                levels(factor3))
-             }                   
-
-        }
-
-
-        ##4#####################
-
-        if (designnr ==4){
-        if(class(factor3)=='numeric'){
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                               factor4=diag(nlevels(factor4)) 
-                               ))
-
-                colnames(design) <- c(levels(phen),
-                                    c(names(facs[1])), 
-                                    c(names(facs[2])), 
-                                    c(names(facs[3])),
-                                    levels(factor4)
-                                    )
-        }
-        else if(class(factor2)=='numeric'){
-                print(names(facs[1]))
-                print(names(facs[2]))
-
-
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                               factor3=diag(nlevels(factor3)),  
-                               factor4=diag(nlevels(factor4)) 
-                               ))
-
-                colnames(design) <- c(levels(phen),
-                                    c(names(facs[1])), 
-                                    c(names(facs[2])), 
-                                    levels(factor3),
-                                    levels(factor4))
-
-            }
-
-        else if(class(factor1)=='numeric'){
-
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                               factor2=diag(nlevels(factor2)),
-                               factor3=diag(nlevels(factor3)),
-                               factor4=diag(nlevels(factor4)) ))
-
-                colnames(design) <- c(levels(phen),
-                                    c(names(facs[1])), 
-                                    levels(factor2), 
-                                    levels(factor3),
-                                    levels(factor4))
-
-            }
-
-
-
-
-        else{
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-                           factor1=diag(nlevels(factor1)), 
-                           factor2=diag(nlevels(factor2)), 
-                           factor3=diag(nlevels(factor3)),  
-                           factor4=diag(nlevels(factor4)) ))
-
-                colnames(design) <- c(levels(phen),
-                                      levels(factor1), 
-                                      levels(factor2), 
-                                      levels(factor3),
-                                      levels(factor4))
-
-            }
-        }
-
-        ##5######################
-
-        if (designnr ==5){
-        if(class(factor3)=='numeric'){
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4+factor5 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                               factor4=diag(nlevels(factor4)),
-                               factor5=diag(nlevels(factor5)) ))
-
-                colnames(design) <- c(levels(phen),
-                                    c(names(facs[1])), 
-                                    c(names(facs[2])), 
-                                    c(names(facs[3])),
-                                    levels(factor4),
-                                    levels(factor5)
-                                    )
-        }
-        else if(class(factor2)=='numeric'){
-
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4+factor5 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                               factor3=diag(nlevels(factor3)),  
-                               factor4=diag(nlevels(factor4)),
-                               factor5=diag(nlevels(factor5)) 
-                               ))
-
-                colnames(design) <- c(levels(phen),
-                                    c(names(facs[1])), 
-                                    c(names(facs[2])), 
-                                    levels(factor3),
-                                    levels(factor4),
-                                    levels(factor5))
-
-            }
-
-
-        else if(class(factor1)=='numeric'){
-
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4+factor5 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                               factor2=diag(nlevels(factor2)), 
-                               factor3=diag(nlevels(factor3)),  
-                               factor4=diag(nlevels(factor4)),
-                               factor5=diag(nlevels(factor5)) 
-                               ))
-
-                colnames(design) <- c(levels(phen),
-                                    c(names(facs[1])), 
-                                    levels(factor2), 
-                                    levels(factor3),
-                                    levels(factor4),
-                                    levels(factor5))
-
-            }
-
-
-
-
-        else{
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4+factor5 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-                                       factor1=diag(nlevels(factor1)), 
-                                       factor2=diag(nlevels(factor2)), 
-                                       factor3=diag(nlevels(factor3)),  
-                                       factor4=diag(nlevels(factor4)),
-                                       factor5=diag(nlevels(factor5)) 
-                                       ))
-
-                colnames(design) <-  c(levels(phen),
-                                      levels(factor1), 
-                                      levels(factor2), 
-                                      levels(factor3),
-                                      levels(factor4),
-                                      levels(factor5))
-                    }                  
-
-
-        }
-
-        ##6########################
-
-        if (designnr ==6){
-
-        if(class(factor3)=='numeric'){
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4+factor5+factor6 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                               factor4=diag(nlevels(factor4)),
-                               factor5=diag(nlevels(factor5)),
-                               factor6=diag(nlevels(factor6)) 
-                               ))
-
-                colnames(design) <- c(levels(phen),
-                                    c(names(facs[1])), 
-                                    c(names(facs[2])), 
-                                    c(names(facs[3])),
-                                    levels(factor4),
-                                    levels(factor5),
-                                    levels(factor6))
-        }
-        else if(class(factor2)=='numeric'){
-
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4+factor5+factor6  ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                               factor3=diag(nlevels(factor3)),  
-                               factor4=diag(nlevels(factor4)),
-                               factor5=diag(nlevels(factor5)),
-                               factor6=diag(nlevels(factor6)) 
-                               ))
-
-                colnames(design) <- c(levels(phen),
-                                    c(names(facs[1])), 
-                                    c(names(facs[2])), 
-                                    levels(factor3),
-                                    levels(factor4),
-                                    levels(factor5),
-                                    levels(factor6))
-
-            }
-
-        else if(class(factor1)=='numeric'){
-
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4+factor5+factor6  ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-
-                               factor2=diag(nlevels(factor2)), 
-                               factor3=diag(nlevels(factor3)),  
-                               factor4=diag(nlevels(factor4)),
-                               factor5=diag(nlevels(factor5)),
-                               factor6=diag(nlevels(factor6)) 
-                               ))
-
-                colnames(design) <- c(levels(phen),
-                                    c(names(facs[1])), 
-                                    levels(factor2), 
-                                    levels(factor3),
-                                    levels(factor4),
-                                    levels(factor5),
-                                    levels(factor6))
-
-            }
-
-
-
-
-        else{
-                design <- model.matrix(~0+phen+factor1+factor2+factor3+factor4+factor5+factor6 ,data=pheno,contrasts.arg=list(phen=diag(nlevels(phen)), 
-                           factor1=diag(nlevels(factor1)), 
-                           factor2=diag(nlevels(factor2)), 
-                           factor3=diag(nlevels(factor3)),  
-                           factor4=diag(nlevels(factor4)),
-                           factor5=diag(nlevels(factor5)),
-                           factor6=diag(nlevels(factor6)) 
-                           ))
-
-                colnames(design) <-  c(levels(phen),
-                                      levels(factor1), 
-                                      levels(factor2), 
-                                      levels(factor3),
-                                      levels(factor4),
-                                      levels(factor5),
-                                      levels(factor6))
-                  }                    
-
-        }
-
-
-        if (designnr >6){
-
-        print('Sorry you cannot specify more than 6 adjustment variables')
-        return(NULL)
-        }
-        }
-
-        cat('Creating design matrix for experiment')
-
-        colnames(design)<- make.names(colnames(design))
-
-        fit <- lmFit(M,design)
-
-        #cat('Checking design.nas')
-        #design.na<-apply(design, 2, function(x) any(is.na(x)))
-        #print(design.na)
-
-
-        #cat('Checking M.nas')
-        #M.na<-apply(M, 2, function(x) any(is.na(x)))
-        #print(M.na)
-
-        #cat('Checking fit.nas')
-        #fit.na<-apply(fit, 2, function(x) any(is.na(x)))
-        #print(fit.na)
-
-
-
-        #test<-imputing.func(fit)
-        #cat('Checking imputed fit.nas')
-        #fitnew.na<-apply(test, 2, function(x) any(is.na(x)))
-        #print(fitnew.na)
-
-
-
-
-        # create a contrast matrix for specific comparisons      
-        cat('Creating contrast matrix for experiment')            
-        design.pairs <- function(levels) {
-                            n <- length(levels)
-                            design <- matrix(0,n,choose(n,2))
-                            rownames(design) <- levels
-                            colnames(design) <- 1:choose(n,2)
-
-                            k <- 0
-                            for (i in 1:(n-1))
-                            for (j in (i+1):n) {
-                                k <- k+1
-                                design[i,k] <- 1
-                                design[j,k] <- -1
-                                colnames(design)[k] <- paste(levels[i],"-",levels[j],sep="")
-                                }
-                            result<-list(des=design,cols=colnames(design), rows=rownames(design) )    
-                            return(result)    
-                            #design
-                            }         
-
-        matr <-design.pairs(make.names(array))
-
-
-        x <- matr$cols
-
-        contrast.matrix <- makeContrasts(contrasts=x ,levels=design) 
-
-
-
-
-        fit2 <- contrasts.fit(fit, contrast.matrix)
-        fit2 <- eBayes(fit2)
-
-        #cat('Checking fit2.nas')
-        #fit2.na<-apply(fit2, 2, function(x) any(is.na(x)))
-        #print(fit2.na)  
-
-
-        #cat('Checking contrast.nas')
-        #contrast.na<-apply(contrast.matrix, 2, function(x) any(is.na(x)))
-        #print(contrast.na)
-
-        # look at the numbers of DM CpGs at FDR < 0.05
-        cat('Computing statistics for experiment')    
-        dectest<- summary(decideTests(fit2, p.value=pvalue))                                           
-
-
-
-
-
-        cat('Aligning annotation')
-        #annSub <- ann[match(rownames(M),ann$Name),]
-        annSub <- ann[ann$Name %in% rownames(M),]
-        #annSub <- ann[match(rownames(fit2$coefficients),ann$Name),]
-
-        if (coef == 'all'){
-
-                        cat('Computing contrasts for experiment')           
-                        topresults <- c()             
-                        for (i in 1:choose(length(array),2)) {        
-                            #print(i)
-
-                            top<-topTable(fit2, genelist=annSub, coef=i,number=number, p.value=adjpval )
-
-                            topresults[[i]] <- top    
-
-                        }
-
-                        result=list(topresults,matr$des, dectest)
-                    }
-
-                    else{
-
-                        cat('Computing contrast for experiment') 
-                        top<-topTable(fit2, genelist=annSub, coef=coef, number=number, p.value=adjpval )   
-                        top<-list(top)
-                        result=list(top,matr$des,dectest)
-
-                    }     
-
-
-            return(result)
-        }""")  (pheno, 
-               phenotype,                
-               M_val,                
-               self.annotation, 
-               number, 
-               r_array, 
-               coef,
-               pvalue,
-               adjpval,
-               svas)     
-        
-        
-        self.dmps_list=[]
-        for elem in self.dmps:
-            
-            self.dmps_list.append(pd.DataFrame(pandas2ri.ri2py(elem)))
-        lists=[]
-        for elements in self.dmps_list:            
-            for elem in elements['Name'].tolist():         
-                lists.append(elem)  
-        self.dmps = list(dict.fromkeys(lists))          
-        self.contrastmatrix=self.ri2py_dataframe(data)
-        
-        self.dectest=self.ri2py_dataframe(dectest)
-        ###to-do
-        if save_csv:
-            if path:
-                for elem in self.dmps_list:
-                    
-                    
-                    elem.to_csv(path+'{}.csv'.format(i,contrasts[i]), index=False)
-            else:
-                for i,elem in enumerate(self.dmps_list):
-                    
-                   
-                    elem.to_csv(self.idat_dir+'{}.csv'.format(i,contrasts[i]), index=False)
-                   
-        print('done')   
-        
-        
-        
+  
