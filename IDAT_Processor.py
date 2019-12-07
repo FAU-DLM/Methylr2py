@@ -638,7 +638,7 @@ class PreProcessIDATs:
         if plot== 'all':    
             
             
-            #fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(20,5))    
+            fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(20,5))    
             ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
             ax2 = sns.barplot(x=detP_keep_py.columns, y=detP_keep_py.mean(axis=0).to_numpy(), ax=ax2)
             ax3 = sns.barplot(x=detP_fails_py.columns, y=detP_fails_py.mean(axis=0).to_numpy(), ax=ax3)
@@ -666,7 +666,7 @@ class PreProcessIDATs:
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
                 dataframe=dataframe.transpose()  
-            #fig, ax = plt.subplots(figsize=(20, 7))
+            fig, ax = plt.subplots(figsize=(20, 7))
             fig.subplots_adjust=0.85
             ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
             if log_scale:
@@ -683,7 +683,7 @@ class PreProcessIDATs:
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
                 dataframe=dataframe.transpose()  
-            #fig, ax = plt.subplots()     
+            fig, ax = plt.subplots()     
             ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
             if log_scale:
                 ax.set_yscale('log')
@@ -699,7 +699,7 @@ class PreProcessIDATs:
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
                 dataframe=dataframe.transpose()  
-            #fig, ax = plt.subplots()     
+            fig, ax = plt.subplots()     
             ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
             if log_scale:
                 ax.set_yscale('log')
@@ -723,8 +723,7 @@ class PreProcessIDATs:
         import seaborn as sns
         import copy
         from seaborn import cubehelix_palette
-        fig, ax = plt.subplots() 
-        fig.tight_layout() 
+        fig, ax = plt.subplots()         
         from collections import OrderedDict
         import matplotlib.pyplot as plt
 
