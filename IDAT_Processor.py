@@ -595,7 +595,7 @@ class PreProcessIDATs:
             ax.hlines(y=thresh, xmin=hymin, xmax=thresh, ls='--') 
         
     def plt_meandetP(self, detPcut=0.01, SampleCutoff=0.1, log_scale=True, plot='all' ):
-        
+        #self=preproidat
         #dataframe=self.detectionP()        
                
         #if len(dataframe)<=len(dataframe.columns):
@@ -603,130 +603,65 @@ class PreProcessIDATs:
         #    dataframe=dataframe.transpose()  
         ### all, allsamples, badsamples, goodsamples    
             
-        detP, detP_keep, detP_fails = robjects.r("""function (rgset, detPcut, cutsamples) { 
+        detP = robjects.r("""function (rgset, detPcut, cutsamples) { 
             detP <- detectionP(rgset)
             numfail <- matrix(colMeans(detP >= detPcut))
             rownames(numfail) <- colnames(detP)
             colnames(numfail) <- "Failed CpG Fraction."
             #print(numfail)
-            RemainSample <- which(numfail <= cutsamples)
+            RemainSample <- which(numfail < cutsamples)
             
             
 
-            if(any(numfail > cutsamples))
+            if(any(numfail >= cutsamples))
             {   
-                rgset_fails <- rgset[,!RemainSample]
+                rgset_keeps <- rgset[,RemainSample]
                 
                 
-                detP_fails <- detectionP(rgset_fails)       
-                
+                detP_keeps <- detectionP(rgset_keeps)       
+                result=list(detP,detP_keeps)
                 
             
             }
             
-           if(any(numfail <= cutsamples))
-            {   
-                rgset_keep <- rgset[,RemainSample]
-                
-                
-                detP_keep <- detectionP(rgset_keep)     
-                
-                
+            else{
             
-            } 
+            result=list(detP)
             
-           
-             
-            
-            if (exists("detP_fails")==TRUE && exists("detP_keep")==TRUE)
-            
-            {         
-                print("both")
-                result=list(detP,detP_keep, detP_fails)
-                
-            }
-            
-            if (exists("detP_fails")==TRUE && exists("detP_keep")==FALSE)
-            
-             {         
-                print("fails")
-                result=list(detP,detP_fails, 'Fails')
-                
-            }
+            }         
           
-          
-            if (exists("detP_fails")==FALSE && exists("detP_keep")==TRUE)
-            
-             {         
-                print("keepers")
-                result=list(detP,detP_keep, 'Keepers')
                 
-             }
-                   
            
            
            return(result)
            
         }""")(self.RGset,  detPcut, SampleCutoff)       
         
-        
+        #print(len(pandas2ri.ri2py(detP)))
         #print(pandas2ri.ri2py(detP_fails)[0])
-        if pandas2ri.ri2py(detP_fails)[0]=='Keepers':
-            detP_py=self.ri2py_dataframe(detP, matrix=False)
-            detP_keep_py=self.ri2py_dataframe(detP_keep, matrix=False)
-            detP_fails_py=self.ri2py_dataframe(detP, matrix=False)
-        
-        
-        elif pandas2ri.ri2py(detP_fails)[0]=='Fails':
-            detP_py=self.ri2py_dataframe(detP, matrix=False)
-            detP_keep_py=self.ri2py_dataframe(detP, matrix=False)
-            detP_fails_py=self.ri2py_dataframe(detP_fails, matrix=False)
-        
+        if len(pandas2ri.ri2py(detP))==2:
+            detP_py=self.ri2py_dataframe(detP[0], matrix=False)
+            detP_keep_py=self.ri2py_dataframe(detP[1], matrix=False)
             
         
-        elif pandas2ri.ri2py(detP_fails)[0] !='Fails' and pandas2ri.ri2py(detP_fails)[0] !='Keepers':  
-            detP_py=self.ri2py_dataframe(detP, matrix=False)
-            detP_keep_py=self.ri2py_dataframe(detP_keep, matrix=False)
-            detP_fails_py=self.ri2py_dataframe(detP_fails, matrix=False)
         
-        
-        if plot== 'all' and pandas2ri.ri2py(detP_fails)[0]!='Keepers' and pandas2ri.ri2py(detP_fails)[0]!='Fails':             
+        elif len(pandas2ri.ri2py(detP))==1:
+            detP_py=self.ri2py_dataframe(detP[0], matrix=False)     
             
-            fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1)    
-            ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
-            ax2 = sns.barplot(x=detP_keep_py.columns, y=detP_keep_py.mean(axis=0).to_numpy(), ax=ax2)
-            ax3 = sns.barplot(x=detP_fails_py.columns, y=detP_fails_py.mean(axis=0).to_numpy(), ax=ax3)
-            if log_scale:
-                ax1.set_yscale('log')
-                ax2.set_yscale('log')
-                ax3.set_yscale('log')
-            
-            ax1.axhline(detPcut, ls='--')
-            ax2.axhline(detPcut, ls='--')
-            ax3.axhline(detPcut, ls='--')
-            ax1.set_title('All Samples')   
-            ax2.set_title('Good Samples')   
-            ax3.set_title('Bad Samples') 
-            ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
-            ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
-            ax3.set_xticklabels(ax3.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
-            plt.tight_layout()
-            plt.show()
-            return 
         
-        
-        
-        elif plot== 'all' and pandas2ri.ri2py(detP_fails)[0]=='Keepers':  
                
+        
+        if plot== 'all' and len(pandas2ri.ri2py(detP))==2:             
             
-            fig, (ax1, ax2 ) = plt.subplots(nrows=2, ncols=1)    
+            fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1) 
+            fig.subplots_adjust=0.85
             ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
             ax2 = sns.barplot(x=detP_keep_py.columns, y=detP_keep_py.mean(axis=0).to_numpy(), ax=ax2)
             
             if log_scale:
                 ax1.set_yscale('log')
                 ax2.set_yscale('log')
-               
+                
             
             ax1.axhline(detPcut, ls='--')
             ax2.axhline(detPcut, ls='--')
@@ -737,35 +672,38 @@ class PreProcessIDATs:
             ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
             ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
             
-            plt.tight_layout()
+            #plt.tight_layout()
             plt.show()
             return 
         
-        elif plot== 'all' and pandas2ri.ri2py(detP_fails)[0]=='Fails':  
+        
+        
+        if plot== 'all' and len(pandas2ri.ri2py(detP))==1:  
                
             
-            fig, (ax1,  ax3) = plt.subplots(nrows=2, ncols=1)    
+            fig, (ax1) = plt.subplots(nrows=1, ncols=1)    
+            fig.subplots_adjust=0.85
             ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
             
-            ax3 = sns.barplot(x=detP_fails_py.columns, y=detP_fails_py.mean(axis=0).to_numpy(), ax=ax3)
+            
             if log_scale:
                 ax1.set_yscale('log')
                 
-                ax3.set_yscale('log')
+               
             
             ax1.axhline(detPcut, ls='--')
             
-            ax3.axhline(detPcut, ls='--')
             ax1.set_title('All Samples')   
+             
             
-            ax3.set_title('Bad Samples') 
             ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
             
-            ax3.set_xticklabels(ax3.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
-            plt.tight_layout()
+            
+            #plt.tight_layout()
             plt.show()
             return 
         
+                
         
         if plot== 'allsamples':
             
@@ -781,53 +719,35 @@ class PreProcessIDATs:
             ax.axhline(detPcut, ls='--')    
             ax.set_title('All Samples') 
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')          
-            plt.tight_layout()
+            #plt.tight_layout()
             plt.show()  
             return
             
-        if plot== 'badsamples' and pandas2ri.ri2py(detP_fails)[0]=='Fails': 
-            dataframe=detP_fails_py
-            if len(dataframe)<=len(dataframe.columns):
-                print('Dataframe needed to be transposed')
-                dataframe=dataframe.transpose()  
-            fig, ax = plt.subplots()     
-            ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
-            if log_scale:
-                ax.set_yscale('log')
-            ax.axhline(detPcut, ls='--')    
-            ax.set_title('Bad Samples') 
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
-            plt.tight_layout()
-            plt.show()   
-            return
         
-        elif plot== 'badsamples' and pandas2ri.ri2py(detP_fails)[0]!='Fails':
-            print('no badsamples present')
-            return
-        
-        if plot== 'goodsamples' and pandas2ri.ri2py(detP_fails)[0]=='Keepers':   
+        if plot== 'goodsamples' and len(pandas2ri.ri2py(detP))==2:   
             dataframe=detP_keep_py
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
                 dataframe=dataframe.transpose()  
-            fig, ax = plt.subplots()     
+            fig, ax = plt.subplots()    
+            fig.subplots_adjust=0.85
             ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
             if log_scale:
                 ax.set_yscale('log')
             ax.axhline(detPcut, ls='--')    
             ax.set_title('Good Samples')
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
-            plt.tight_layout()
+            #plt.tight_layout()
             plt.show()   
             return
         
-        elif plot== 'goodsamples' and pandas2ri.ri2py(detP_fails)[0]!='Keepers':  
+        if plot== 'goodsamples' and len(pandas2ri.ri2py(detP))==1:  
             print('no goodsamples present')
             return
             
         else:
             print('Please specify which plots you would want: \n'
-            'either "all" "allsamples" "badsamples" or "goodsamples" may be specified')
+            'either "all" "allsamples" or "goodsamples" may be specified')
             return
         
         
@@ -2915,7 +2835,7 @@ class PreProcessIDATs:
                         cat("Samples having failure rate above", cutsamples, paste(colnames(matnorm[,frCols > cutsamples]),collapse=",")," and will be deleted. ")                        
                         
                         
-                        cat("Percentage of CpGs having success rate above", cutcpgs, "is", round(100*sum(srRows > cutcpgs)/length(srRows),2),"% \n")
+                        cat("Percentage of CpGs having succes rate above", cutcpgs, "is", round(100*sum(srRows > cutcpgs)/length(srRows),2),"% \n")
                         
                         
                         
@@ -2968,8 +2888,8 @@ class PreProcessIDATs:
                     if(verbose){
                         cat("Percentage of beta samples having failure rate below", cutsamples, "is", round(100*sum(frColsbeta < cutsamples)/length(frColsbeta),2),"% \n")
                         cat("Percentage of M samples having failure rate below", cutsamples, "is", round(100*sum(frColsM < cutsamples)/length(frColsM),2),"% \n")
-                        cat("Percentage of beta CpGs having success rate above", cutcpgs, "is", round(100*sum(srRowsbeta > cutcpgs)/length(srRowsbeta),2),"% \n")
-                        cat("Percentage of M CpGs having success rate above", cutcpgs, "is", round(100*sum(srRowsM > cutcpgs)/length(srRowsM),2),"% \n")
+                        cat("Percentage of beta CpGs having success rates above", cutcpgs, "is", round(100*sum(srRowsbeta > cutcpgs)/length(srRowsbeta),2),"% \n")
+                        cat("Percentage of M CpGs having success rates above", cutcpgs, "is", round(100*sum(srRowsM > cutcpgs)/length(srRowsM),2),"% \n")
                         
                         cat("Samples having failure rate above", cutsamples, paste(colnames(matnormM[,frColsM > cutsamples]),collapse=",")," and will be deleted. ")                        
                         
