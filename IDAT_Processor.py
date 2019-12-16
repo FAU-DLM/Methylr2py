@@ -486,14 +486,17 @@ class PreProcessIDATs:
     
     
     def plt_mds(self, dataframe=None, pheno=None,  top=1000, n_components=2, group='disease', components=(0,1)): 
+        
         if dataframe is None: 
             beta=self.minfi.getBeta(self.RGset)
-            dataframe=pd.DataFrame(pandas2ri.ri2py(beta),
-                       index=numpy2ri.ri2py(robjects.r("rownames")(beta)),
-                       columns=numpy2ri.ri2py(robjects.r("colnames")(beta))).transpose()
+            dataframe=self.ri2py_dataframe(beta, matrix=False).transpose()
+        
         if pheno is None:
-            pheno=pandas2ri.ri2py(self.pheno)
-            
+            try:
+                pheno=self.ri2py_dataframe(self.pheno, matrix=True)
+            except:
+                pheno=self.ri2py_dataframe(self.pheno, matrix=False)
+                
         import matplotlib.pyplot as plt
         import matplotlib.cm as cm
         from sklearn.manifold import MDS
@@ -527,7 +530,7 @@ class PreProcessIDATs:
         plt.show()       
     
     
-    def getQC(self, addQC=False, phenotype=None):
+    def getQC(self, addQC=False, phenotype=None, RGset=None):
         # give the samples descriptive names
         #check_list=[disease, sample]
         #for val in check_list: 
@@ -537,8 +540,8 @@ class PreProcessIDATs:
                          'These are the available column names:')
                 print(pandas2ri.ri2py(robjects.r['as'](self.pheno,'data.frame')).columns.tolist())
                 return None, None, None, None
-        
-        MSet = self.minfi.preprocessRaw(self.RGset)
+        RGset=RGset if RGset else self.RGset
+        MSet = self.minfi.preprocessRaw(RGset)
         qc,cols,rows=robjects.r("""function ( MSet ) {
         qc = getQC(MSet)         
         
@@ -591,7 +594,7 @@ class PreProcessIDATs:
             ax.vlines(x=thresh, ymin=vymin, ymax=thresh, ls='--')
             ax.hlines(y=thresh, xmin=hymin, xmax=thresh, ls='--') 
         
-    def plt_meandetP(self, detPcut=0.01, cutsamples=0.1, cutcpgs=0, log_scale=True, plot='all' ):
+    def plt_meandetP(self, detPcut=0.01, SampleCutoff=0.1, log_scale=True, plot='all' ):
         
         #dataframe=self.detectionP()        
                
@@ -600,45 +603,96 @@ class PreProcessIDATs:
         #    dataframe=dataframe.transpose()  
         ### all, allsamples, badsamples, goodsamples    
             
-        detP, detP_keep, detP_fails = robjects.r("""function (rgset, detPcut, cutsamples, cutcpgs) { 
+        detP, detP_keep, detP_fails = robjects.r("""function (rgset, detPcut, cutsamples) { 
             detP <- detectionP(rgset)
             numfail <- matrix(colMeans(detP >= detPcut))
             rownames(numfail) <- colnames(detP)
             colnames(numfail) <- "Failed CpG Fraction."
             #print(numfail)
-            RemainSample <- which(numfail < cutsamples)
-            FailSample <- which(numfail > cutsamples)
+            RemainSample <- which(numfail <= cutsamples)
+            
+            
 
-            if(any(numfail >= cutsamples))
+            if(any(numfail > cutsamples))
             {   
-                rgset_fails <- rgset[,FailSample]
+                rgset_fails <- rgset[,!RemainSample]
+                
+                
+                detP_fails <- detectionP(rgset_fails)       
+                
+                
+            
+            }
+            
+           if(any(numfail <= cutsamples))
+            {   
                 rgset_keep <- rgset[,RemainSample]
                 
+                
+                detP_keep <- detectionP(rgset_keep)     
+                
+                
+            
+            } 
+            
+           
+             
+            
+            if (exists("detP_fails")==TRUE && exists("detP_keep")==TRUE)
+            
+            {         
+                print("both")
+                result=list(detP,detP_keep, detP_fails)
+                
             }
-
-           #RemainProbe <- rowSums(detP > detPcut) <= cutcpgs * length(RemainSample)    
-           #FailProbe <- rowSums(detP < detPcut) <= cutcpgs * length(FailSample)
-
-           #rgset_fails <- rgset_fails[FailProbe,]    
-           detP_fails <- detectionP(rgset_fails) 
+            
+            if (exists("detP_fails")==TRUE && exists("detP_keep")==FALSE)
+            
+             {         
+                print("fails")
+                result=list(detP,detP_fails, 'Fails')
+                
+            }
+          
+          
+            if (exists("detP_fails")==FALSE && exists("detP_keep")==TRUE)
+            
+             {         
+                print("keepers")
+                result=list(detP,detP_keep, 'Keepers')
+                
+             }
+                   
            
-           #rgset_keep <- rgset_keep[RemainProbe,] 
-           detP_keep <- detectionP(rgset_keep) 
            
-           result=list(detP,detP_keep, detP_fails)
            return(result)
            
-        }""")(self.RGset,  detPcut, cutsamples, cutcpgs)       
+        }""")(self.RGset,  detPcut, SampleCutoff)       
         
         
-        detP_py=self.ri2py_dataframe(detP, matrix=False)
-        detP_keep_py=self.ri2py_dataframe(detP_keep, matrix=False)
-        detP_fails_py=self.ri2py_dataframe(detP_fails, matrix=False)
+        #print(pandas2ri.ri2py(detP_fails)[0])
+        if pandas2ri.ri2py(detP_fails)[0]=='Keepers':
+            detP_py=self.ri2py_dataframe(detP, matrix=False)
+            detP_keep_py=self.ri2py_dataframe(detP_keep, matrix=False)
+            detP_fails_py=self.ri2py_dataframe(detP, matrix=False)
         
-        if plot== 'all':    
+        
+        elif pandas2ri.ri2py(detP_fails)[0]=='Fails':
+            detP_py=self.ri2py_dataframe(detP, matrix=False)
+            detP_keep_py=self.ri2py_dataframe(detP, matrix=False)
+            detP_fails_py=self.ri2py_dataframe(detP_fails, matrix=False)
+        
             
+        
+        elif pandas2ri.ri2py(detP_fails)[0] !='Fails' and pandas2ri.ri2py(detP_fails)[0] !='Keepers':  
+            detP_py=self.ri2py_dataframe(detP, matrix=False)
+            detP_keep_py=self.ri2py_dataframe(detP_keep, matrix=False)
+            detP_fails_py=self.ri2py_dataframe(detP_fails, matrix=False)
+        
+        
+        if plot== 'all' and pandas2ri.ri2py(detP_fails)[0]!='Keepers' and pandas2ri.ri2py(detP_fails)[0]!='Fails':             
             
-            fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(20,5))    
+            fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1)    
             ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
             ax2 = sns.barplot(x=detP_keep_py.columns, y=detP_keep_py.mean(axis=0).to_numpy(), ax=ax2)
             ax3 = sns.barplot(x=detP_fails_py.columns, y=detP_fails_py.mean(axis=0).to_numpy(), ax=ax3)
@@ -658,7 +712,60 @@ class PreProcessIDATs:
             ax3.set_xticklabels(ax3.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
             plt.tight_layout()
             plt.show()
-            return detP_py
+            return 
+        
+        
+        
+        elif plot== 'all' and pandas2ri.ri2py(detP_fails)[0]=='Keepers':  
+               
+            
+            fig, (ax1, ax2 ) = plt.subplots(nrows=2, ncols=1)    
+            ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
+            ax2 = sns.barplot(x=detP_keep_py.columns, y=detP_keep_py.mean(axis=0).to_numpy(), ax=ax2)
+            
+            if log_scale:
+                ax1.set_yscale('log')
+                ax2.set_yscale('log')
+               
+            
+            ax1.axhline(detPcut, ls='--')
+            ax2.axhline(detPcut, ls='--')
+            
+            ax1.set_title('All Samples')   
+            ax2.set_title('Good Samples')   
+            
+            ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
+            ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
+            
+            plt.tight_layout()
+            plt.show()
+            return 
+        
+        elif plot== 'all' and pandas2ri.ri2py(detP_fails)[0]=='Fails':  
+               
+            
+            fig, (ax1,  ax3) = plt.subplots(nrows=2, ncols=1)    
+            ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
+            
+            ax3 = sns.barplot(x=detP_fails_py.columns, y=detP_fails_py.mean(axis=0).to_numpy(), ax=ax3)
+            if log_scale:
+                ax1.set_yscale('log')
+                
+                ax3.set_yscale('log')
+            
+            ax1.axhline(detPcut, ls='--')
+            
+            ax3.axhline(detPcut, ls='--')
+            ax1.set_title('All Samples')   
+            
+            ax3.set_title('Bad Samples') 
+            ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
+            
+            ax3.set_xticklabels(ax3.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
+            plt.tight_layout()
+            plt.show()
+            return 
+        
         
         if plot== 'allsamples':
             
@@ -666,7 +773,7 @@ class PreProcessIDATs:
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
                 dataframe=dataframe.transpose()  
-            fig, ax = plt.subplots(figsize=(20, 7))
+            fig, ax = plt.subplots()
             fig.subplots_adjust=0.85
             ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
             if log_scale:
@@ -678,7 +785,7 @@ class PreProcessIDATs:
             plt.show()  
             return
             
-        if plot== 'badsamples': 
+        if plot== 'badsamples' and pandas2ri.ri2py(detP_fails)[0]=='Fails': 
             dataframe=detP_fails_py
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
@@ -693,8 +800,12 @@ class PreProcessIDATs:
             plt.tight_layout()
             plt.show()   
             return
-            
-        if plot== 'goodsamples':   
+        
+        elif plot== 'badsamples' and pandas2ri.ri2py(detP_fails)[0]!='Fails':
+            print('no badsamples present')
+            return
+        
+        if plot== 'goodsamples' and pandas2ri.ri2py(detP_fails)[0]=='Keepers':   
             dataframe=detP_keep_py
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
@@ -709,11 +820,17 @@ class PreProcessIDATs:
             plt.tight_layout()
             plt.show()   
             return
+        
+        elif plot== 'goodsamples' and pandas2ri.ri2py(detP_fails)[0]!='Keepers':  
+            print('no goodsamples present')
+            return
             
         else:
             print('Please specify which plots you would want: \n'
             'either "all" "allsamples" "badsamples" or "goodsamples" may be specified')
             return
+        
+        
     
     def plt_curves(self, matrix=None, pheno=None, variant="grouped", group_by=None, nrows=1):
         
@@ -855,18 +972,20 @@ class PreProcessIDATs:
         
         else:
             mval = self.minfi.getM(Object)
+            
         mval_py = self.ri2py_dataframe(mval)
         
-        return mval_py ,mval 
+        return mval_py, mval 
           
     def detectionP(self, RGset=None):
+        if RGset is None:
+            RGset = self.RGset
+            
         # calculate the detection p-values
-        self.detP =robjects.r("detectionP")(RGset) 
-        #detP_py=pd.DataFrame(pandas2ri.ri2py(self.detP),
-        #        index=numpy2ri.ri2py(robjects.r("rownames")(self.detP)),
-        #        columns=numpy2ri.ri2py(robjects.r("colnames")(self.detP))).transpose()
-        detP_py=self.ri2py_dataframe(self.detP, matrix=False)
-        return detP_py   
+        detP =robjects.r("detectionP")(RGset) 
+       
+        detP_py=self.ri2py_dataframe(detP, matrix=False)
+        return detP,detP_py   
     
     def ri2py_dataframe(self, r_dat, matrix=False):
         if matrix:
@@ -892,9 +1011,94 @@ class PreProcessIDATs:
                             sampNames=pandas2ri.ri2py(self.pheno)[samplenames], 
                             sampGroups=pandas2ri.ri2py(self.pheno)[diseasegroup],                            
                             pdf = "{}/qcReport.pdf".format(output_dir))
+    
+    
+    def remove_badprobes(self, obj=None, RGset=None, detP=None, ProbeCutoff=0, SampleCutoff=0.1, detPcut=0.01, verbose=True):
         
         
-    def remove_badsamples(self, badSampleCutoff=10,rm_badsamples=False, detPcut=0.01, cutsamples=0.1, addQC=False, verbose=True, RGset=None):
+        if obj:
+            obj=obj
+        else:
+            obj=self.GRset
+            
+        RGset=RGset if RGset else self.RGset    
+        grset = robjects.r("""function (obj) {             
+            if(class(obj) == "GenomicRatioSet")
+                    return(TRUE)  
+             else return(FALSE)                
+            }""")(obj)   
+        
+        if not pandas2ri.ri2py(grset):          
+            if (verbose):    
+                print('sorry obj needs to be of type "GenomicRatioSet"...')             
+            return None
+        
+        if detP:
+            detP=detP  
+        else:
+            detP,_=self.detectionP(RGset=RGset)
+        
+        
+        GRset = robjects.r("""function (obj, cutprobes, detP, detPcut, cutsamples, verbose)
+        
+        {
+               
+               if(identical(rownames(detP),rownames(obj)) & identical(colnames(detP),colnames(obj)))
+                    {
+                        if(verbose)cat("    detP check success.")
+                    }
+                    else {
+                        
+                        if(verbose)cat("Your detP matrix has been aligned to match the EXACT same rowname and colname as Data Matrix.")
+                        
+                        keep <- ( rownames(detP) %in% rownames(obj))
+                        detP <- detP[keep,]  
+                        keep <- (colnames(detP) %in% colnames(obj))
+                        detP <- detP[,keep]
+                        
+                    }  
+               
+                numfail <- matrix(colMeans(detP >= detPcut))
+                rownames(numfail) <- colnames(detP)
+                colnames(numfail) <- "Failed CpG Fraction."
+
+                RemainSample <- which(numfail <= cutsamples)
+               
+                if(any(numfail > cutsamples))
+                {
+                    cat("\n    The detSamplecut parameter is : ",cutsamples)
+                    cat("    Samples : ", paste(rownames(numfail)[which(numfail >= cutsamples)],collapse=",")," will be deleted.")
+                    cat("    There are ",length(RemainSample)," samples remained for analysis.")
+                    obj <- obj[,RemainSample]
+
+                }
+               
+               
+               RemainProbe <- rowSums(detP > detPcut) <= cutprobes * length(RemainSample)
+               
+               if(cutprobes==0)
+               
+                   {   
+                       if(verbose)cat("\n    Filtering probes with a detection p-value above ",detPcut,".")
+                       if(verbose)cat("    Removing ",sum(RemainProbe==FALSE)," probes.")
+                       if(verbose)cat("    If a large number of probes have been removed, we suggests you to identify potentially bad samples")
+                   } else {
+                       if(verbose)cat("\n    Filtering probes with a detection p-value above ",detPcut," in at least", cutprobes*100,"% Samples.")
+                       if(verbose)cat("    Removing ",sum(RemainProbe==FALSE)," probes.")
+                       if(verbose)cat("    If a large number of probes have been removed, we suggests you to identify potentially bad samples")
+                   }
+              
+               obj <-  obj[RemainProbe,]
+               
+               if(sum(detP > detPcut) > 0) cat("    There are still ",sum(detP > detPcut), " failed probes exist in your data set, imputation is recommended.")                
+                return(obj)
+                
+                 }""")(obj, ProbeCutoff, detP, detPcut, SampleCutoff,verbose ) 
+        pheno= robjects.r("pData")(GRset)
+        return GRset, pheno
+    
+    
+    def remove_badsamples(self, badSampleCutoff=10, rm_badsamples=False, detPFilter=True, detPcut=0.01, SampleCutoff=0.1, addQC=False, verbose=True, RGset=None):
         ''' 
         excluding samples if avarage of unmeth and meth values is below 10
         and if detectionP probe wise threshold is below 0,01(detPcut) 
@@ -907,13 +1111,13 @@ class PreProcessIDATs:
         else:
             RGset=self.RGset
             
-        MSet,qc, datfr = self.getQC(addQC=addQC)
+        MSet,qc, datfr = self.getQC(addQC=addQC, phenotype=None, RGset=RGset)
         #print(qc)    
-        self.RGset, self.pheno = robjects.r("""function (rgset, qc, badSampleCutoff, detPcut, cutsamples, verbose, rm_badsamples) {
+        RGset, pheno = robjects.r("""function (rgset, badSampleCutoff, detPcut, cutsamples, verbose, rm_badsamples, detPFilter) {
             
             #### meth and unmeth filtering ##########
-            #MSet<-preprocessRaw(rgset)
-            #qc <- getQC(MSet)
+            MSet<-preprocessRaw(rgset)
+            qc <- getQC(MSet)
             if (rm_badsamples)
             {
                 meds <- (qc$uMed + qc$mMed) / 2            
@@ -932,33 +1136,35 @@ class PreProcessIDATs:
             }
             
             ####  detP filtering  ########                
-            
-            if(verbose){   
-                cat("\n  Filtering Detect P value Start\n")
-                
-            }
-           
-            detP <- detectionP(rgset)
-            numfail <- matrix(colMeans(detP >= detPcut))
-            rownames(numfail) <- colnames(detP)
-            colnames(numfail) <- "Failed CpG Fraction."
-            
-            RemainSample <- which(numfail < cutsamples)
-            print(numfail)
-            if(any(numfail >= cutsamples))
+            if(detPFilter)
             {
-                cat("\n    The detSamplecut parameter is : ",cutsamples)
-                cat("    Samples : ", paste(rownames(numfail)[which(numfail >= cutsamples)],collapse=",")," will be deleted.")
-                cat("    There are ",length(RemainSample)," samples remained for analysis.")
-                rgset <- rgset[,RemainSample]
-                
-            } 
-            
-            else{
-                cat("\ There are no failed samples in your datset")
+                if(verbose){   
+                    cat("\n  Filtering Detect P value Start\n")
+
+                }
+
+                detP <- detectionP(rgset)
+                numfail <- matrix(colMeans(detP >= detPcut))
+                rownames(numfail) <- colnames(detP)
+                colnames(numfail) <- "Failed CpG Fraction."
+
+                RemainSample <- which(numfail <= cutsamples)
+                print(numfail)
+                if(any(numfail > cutsamples))
+                {
+                    cat("\n    The detSamplecut parameter is : ",cutsamples)
+                    cat("    Samples : ", paste(rownames(numfail)[which(numfail >= cutsamples)],collapse=",")," will be deleted.")
+                    cat("    There are ",length(RemainSample)," samples remained for analysis.")
+                    rgset <- rgset[,RemainSample]
+
+                } 
+
+                else{
+                    cat("\ There are no failed samples in your datset")
+                }
+
+               if(sum(detP > detPcut) > 0) cat("    There are still ",sum(detP > detPcut), " failed probes exist in your data set, imputation is recommended.") 
             }
-          
-           if(sum(detP > detPcut) > 0) cat("    There are still ",sum(detP > detPcut), " failed probes exist in your data set, imputation is recommended.") 
            
            if('filenames' %in% names(colData(rgset)))
                {
@@ -968,7 +1174,9 @@ class PreProcessIDATs:
            result=list(rgset, pheno)
            return(result)                       
             
-            }""")(RGset, qc, badSampleCutoff, detPcut, cutsamples, verbose, rm_badsamples) 
+            }""")(RGset, badSampleCutoff, detPcut, SampleCutoff, verbose, rm_badsamples, detPFilter) 
+        
+        return RGset, pheno
                
         
     #### probe wise QC filtering ######
@@ -980,7 +1188,7 @@ class PreProcessIDATs:
         else:
             RGset=self.RGset
 
-        self.RGset_filt, self.pheno = robjects.r("""function (RGset, cutbead, zeropoint, verbose) { 
+        self.RGset_filt, pheno = robjects.r("""function (RGset, cutbead, zeropoint, verbose) { 
 
 
             ##' filter on probe-level: number of beads and zero intensities
@@ -1006,12 +1214,16 @@ class PreProcessIDATs:
                     cat("Filtering on number of beads... \n")
 
                 beadmat <- getNBeads(RGset)
-                RedSD <- RGset$RedSD
-                GreenSD <- RGset$GreenSD
+                #RedSD <- RGset$RedSD
+                #GreenSD <- RGset$GreenSD
 
                 idBeadmat <- beadmat < cutbead
                 ##beadmat[idBeadmat] <- NA
-
+                
+                
+                Grn <- getGreen(RGset)
+                Red <- getRed(RGset)
+                
                 if(verbose)
                     cat("On average", round(100*sum(idBeadmat)/prod(dim(idBeadmat)), 2),"% of the probes (",nrow(idBeadmat),") have number of beads below", cutbead, "\n")
 
@@ -1020,8 +1232,7 @@ class PreProcessIDATs:
                     if(verbose)
                         cat("Filtering on zero intensities... \n")
 
-                    Grn <- getGreen(RGset)
-                    Red <- getRed(RGset)
+                    
 
                     ##determine if Grn and/or Red intensities of type II probes are <1
                     idT2 <- Grn[getProbeInfo(RGset, type = "II")$AddressA,] < 1 | Red[getProbeInfo(RGset, type = "II")$AddressA,] < 1
@@ -1059,8 +1270,8 @@ class PreProcessIDATs:
                         Grn[midGrn, i] <- NA
                     }
                 }
-                RedSD <- RedSD[idBeadmat]
-                GreenSD <- GreenSD[idBeadmat]
+                #RedSD <- RedSD[idBeadmat]
+                #GreenSD <- GreenSD[idBeadmat]
 
                 RGset<-RGChannelSet(Green = Grn, Red = Red,
                              colData = colData(RGset),
@@ -1084,7 +1295,7 @@ class PreProcessIDATs:
         }""")(RGset, cutbead, zeropoint, verbose)
     
     
-        return self.RGset_filt
+        return self.RGset_filt, pheno
     
     
     def screeplot(self, RGset=None, nmax=10):
@@ -1179,13 +1390,14 @@ class PreProcessIDATs:
     
     
     
-    def preprocessFunnorm(self, celltype_adoption=False, use_cell_count2=False, nPCs=2):   
+    def preprocessFunnorm(self, celltype_adoption=False, use_cell_count2=False, nPCs=2, RGset=None):   
+            RGset=RGset if RGset else self.RGset
             if celltype_adoption:
                 if use_cell_count2:
-                    self.NeunC,self.NeunC_table,_  = self.est_cell_counts2(processMethod="preprocessFunnorm", nPCs=nPCs)
+                    self.NeunC,self.NeunC_table,_  = self.est_cell_counts2(RGset=RGset, processMethod="preprocessFunnorm", nPCs=nPCs)
 
                 else:    
-                    self.NeunC,self.NeunC_table, _ = self.est_cell_counts(processMethod="preprocessFunnorm", nPCs=nPCs)
+                    self.NeunC,self.NeunC_table, _ = self.est_cell_counts(RGset=RGset, processMethod="preprocessFunnorm", nPCs=nPCs)
 
                  
 
@@ -1194,16 +1406,18 @@ class PreProcessIDATs:
                 return(mSetSq)
                 }""")(self.RGset, nPCs)
             self.insert_cell_types() 
-            return self.GRset
+            pheno=robjects.r("pData")(self.GRset)
+            return self.GRset,pheno
 
 
-    def preprocessQuantile(self,celltype_adoption=False, use_cell_count2=False):   
+    def preprocessQuantile(self,celltype_adoption=False, use_cell_count2=False, RGset=None):   
+            RGset=RGset if RGset else self.RGset
             if celltype_adoption:
                 if use_cell_count2:
-                    self.NeunC,self.NeunC_table, _ = self.est_cell_counts2(processMethod="preprocessQuantile", nPCs=2)
+                    self.NeunC,self.NeunC_table, _ = self.est_cell_counts2(RGset=RGset,processMethod="preprocessQuantile", nPCs=2)
 
                 else:    
-                    self.NeunC,self.NeunC_table, _ = self.est_cell_counts(processMethod="preprocessQuantile", nPCs=2)
+                    self.NeunC,self.NeunC_table, _ = self.est_cell_counts(RGset=RGset,processMethod="preprocessQuantile", nPCs=2)
 
                    
 
@@ -1215,16 +1429,17 @@ class PreProcessIDATs:
                     return(mSetSq)
                     }""")(self.RGset)
             self.insert_cell_types()
-            return self.GRset    
+            pheno=robjects.r("pData")(self.GRset)
+            return self.GRset , pheno   
 
 
-    def est_cell_counts(self,**kwargs):
+    def est_cell_counts(self,RGset=None,**kwargs):
             
             processMethod=list(kwargs.keys())[0]     
             processMethodname=list(kwargs.values())[0]
             PCs=list(kwargs.keys())[1]     
             nPCs=list(kwargs.values())[1]   
-            rgset=self.RGset
+            rgset=RGset if RGset else self.RGset
             robjects.r('library(FlowSorted.DLPFC.450k)')
             cell_count_estimates = robjects.r("""function (RGset, PCs, nPCs, processMethodname) {
                 cellCounts <- estimateCellCounts(RGset, compositeCellType = "DLPFC",
@@ -1239,7 +1454,7 @@ class PreProcessIDATs:
                 }""")(rgset, PCs, nPCs, processMethodname)        
             return cell_count_estimates
 
-    def est_cell_counts2(self, **kwargs):
+    def est_cell_counts2(self,RGset=None, **kwargs):
             """Given RGSet object, estimate cell counts using reference approach via FlowSorted.Blood.EPIC 
             estimatecellcounts2 method.
 
@@ -1249,8 +1464,8 @@ class PreProcessIDATs:
                 RGSet object stored in python via rpy2
 
            """
-
-            rgset=self.RGset
+            rgset=RGset if RGset else self.RGset
+            
 
             processMethod=list(kwargs.keys())[0]     
             processMethodname=list(kwargs.values())[0]
@@ -1308,8 +1523,10 @@ class PreProcessIDATs:
         
         
     
-    def rm_bad_probes_DNAmArray(self, GRset=None, RGset=None, remove_sex=True, removeXreactiveProbes=True, removeSNPs=True, cutbead=3, zeropoint=True, verbose=True, what="M", cutp=0.01, cutsamples=0.90, cutcpgs=0.90, normalization='funnorm', celltype_adoption=False, use_cell_count2=False):
+    def DNAmArray_processing(self, GRset=None, RGset=None, filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, dropSnPs=True, cutbead=3, zeropoint=True, what="both", ProbeCutoff=0, array_type='EPIC', badSampleCutoff=10, rm_badsamples=True, detPFilter=False, detPcut=0.05, SampleCutoff=0.1, addQC=False, verbose=True, autoimpute=True, imputation_method="imputePCA", beadCutoff=0.05):
         
+        
+               
         if GRset:
             GRset=GRset
         else:
@@ -1317,24 +1534,65 @@ class PreProcessIDATs:
         if RGset:
             RGset=RGset
         else:
-            RGset = self.RGset    
+            RGset = self.RGset 
         
-        self.RGset_filt=self.probeFiltering(cutbead=cutbead, zeropoint=zeropoint, verbose=zeropoint)  
-        
-        if removeSNPs:
-            self.dropLociWithSnps(GRset=None, obj=None)
+        if imputation_method!="methyLImp" and imputation_method!="imputePCA" and imputation_method!="knn":
+            print('You did not specify a valid imputation method!!\n Choose "imputePCA" or "methyLImp" or "knn"...\n now using fallbackmethod "imputePCA"')
+            imputation_method="imputePCA"   
             
-        if removeXreactiveProbes:
-            self.excludeXreactiveprobes(GRset=None, obj=None, array_type='EPIC')
+        if verbose:
+            print('\nNow performing badsample removal')
+        RGset, pheno = self.remove_badsamples(badSampleCutoff=badSampleCutoff, rm_badsamples=rm_badsamples, detPFilter=detPFilter, detPcut=detPcut, SampleCutoff=SampleCutoff, addQC=addQC, verbose=verbose, RGset=RGset)
         
-        if remove_sex:
-            self.dropSexRelatedProbes( GRset=None, obj=None)
+        if verbose:
+            print('\n Now performing probefiltering on beadcount')
+        RGset_filt, pheno = self.probeFiltering(cutbead=cutbead, RGset=RGset,zeropoint=zeropoint, verbose=verbose) 
+        
+        if verbose:
+                print('\nNow removing more bad probes ')  
+        detP, _ = self.detectionP(RGset=RGset)        
+        GRset, pheno=self.remove_badprobes(obj=GRset, RGset=RGset, detP=detP, ProbeCutoff=ProbeCutoff,SampleCutoff=SampleCutoff, detPcut=detPcut, verbose=True)    
+                
+        if filterNoCG and excludeXreactiveprobes and dropSnPs and filterXY is not False: 
+            if verbose:
+                print('\nNow removing more probes ')
+            GRset, pheno=self.filterCpGs(obj=GRset if GRset else RGset , 
+                                dropSnPs=dropSnPs, 
+                                GRset=True if GRset else False, 
+                                filterXY=filterXY, 
+                                filterNoCG=filterNoCG, 
+                                excludeXreactiveprobes=excludeXreactiveprobes, 
+                                array_type=array_type, 
+                                verbose=verbose)
+        
+        
+        if verbose:
+                print('\nNow performing reduce function')  
+        if what=='M':            
+            self.mval_py, self.pheno_py=self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose,autoimpute=autoimpute, imputation_method=imputation_method, beadCutoff=beadCutoff)
             
-        self.mval_py=self.reduce(GRset=None, RGset=None, what=what, cutp=cutp, cutsamples=cutsamples, cutcpgs=cutcpgs, verbose=verbose)
+            #self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
+            
+            
+            return self.mval_py,self.pheno_py
         
-        self.pheno=pheno[pheno['ID'].isin(self.mval_py.columns.to_list())]
+        if what=='beta':    
+            
+            self.beta, self.pheno_py=self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose, autoimpute=autoimpute, imputation_method=imputation_method, beadCutoff=beadCutoff)
+            
+            #self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)        
+            return self.beta_py,self.pheno_py
         
-        return self.mval_py
+        if what=='both':            
+            self.beta_py, self.mval_py, self.pheno_py =self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose,autoimpute=autoimpute, imputation_method=imputation_method, beadCutoff=beadCutoff) 
+            
+                
+            #self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)    
+            #self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)        
+            return self.mval_py,self.beta_py, self.pheno_py
+              
+        
+       
         
         
     def dropLociWithSnps(self, GRset=None, obj=None):
@@ -1365,7 +1623,7 @@ class PreProcessIDATs:
             if(verbose)cat("\n  Filtering NoCG Start")
             RemainProbe <- substr(rownames(obj),1,2) == "cg"
             if(verbose)cat("    Only Keep CpGs, removing ", sum(RemainProbe == FALSE) ," probes from the analysis.")
-            bj <- obj[RemainProbe,]               
+            obj <- obj[RemainProbe,]               
             return(obj)
             }""")(obj, verbose)
         return obj
@@ -1443,24 +1701,24 @@ class PreProcessIDATs:
                 print('sorry can not remove snps object need to be of type "GenomicRatioSet"...\n processing without performing snp removal')             
         if dropSnPs and pandas2ri.ri2py(grset):
             obj=self.dropLociWithSnps(GRset=obj)
-            self.GRset=obj                               
-                      
+            #self.GRset=obj                               
+                   
         
         mset = robjects.r("""function (obj) {             
              if(class(obj) == "MethylSet")
                     return(TRUE)    
              else return(FALSE)                
             }""")(obj)
-        if pandas2ri.ri2py(mset):   
-                  self.Mset=obj
+        #if pandas2ri.ri2py(mset):   
+                  #self.Mset=obj
         
         rset = robjects.r("""function (obj) {             
              if(class(obj) == "RatioSet")
                     return(TRUE)                         
              else return(FALSE)
             }""")(obj)
-        if pandas2ri.ri2py(rset):   
-                  self.Rset=obj           
+        #if pandas2ri.ri2py(rset):   
+                 # self.Rset=obj           
                   
         
         gmset = robjects.r("""function (obj) {             
@@ -1468,9 +1726,9 @@ class PreProcessIDATs:
                     return(TRUE)                         
              else return(FALSE)
             }""")(obj)      
-        if pandas2ri.ri2py(gmset):   
-                  self.GMset=obj           
-        
+        #if pandas2ri.ri2py(gmset):   
+                 # self.GMset=obj           
+        pheno=robjects.r("pData")(obj)
             
         if verbose:    
             robjects.r("""function (obj, orig_obj) { 
@@ -1485,11 +1743,1038 @@ class PreProcessIDATs:
 
                 }""")(obj, orig_obj)            
         
-        return obj
+        return obj, pheno
        
-   
+    def beadCount(self, RGset=None):
+        
+        if RGset is None:
+            RGset=self.RGset
+        else:
+            RGset=RGset
+
+        bc=robjects.r("""function(RGset)                                               
+                        {                                             
+         #beadcount function, creates matrix with NAs representing probes with beadcount <3 from Extended RG Channel Set
+
+
+        #' Creates matrix of beacounts from minfi data.
+        #' 
+        #' Creates matrix of beacounts from data read in using the minfi package.  NAs
+        #' represent probes with beadcount <3.  An Extended RG Channel Set is required
+        #' for this function to work.
+        #' 
+        #' 
+        #' @param x 450K methylation data read in using minfi to create an Extended RG
+        #' Channel Set
+        #' @return A matrix of bead counts with bead counts <3 represented by NA for
+        #' use in the pfilter function for quality control
+        #' @note The beadcount function is internal to the pfilter function
+        #' @author Ruth.Pidsley@@kcl.ac.uk
+        #' @references [1] Pidsley R, Wong CCY, Volta M, Lunnon K, Mill J, Schalkwyk
+        #' LC: A data-driven approach to preprocessing Illumina 450K methylation array
+        #' data (submitted)
+        #' @export beadcount
+        beadcount<-function(x){
+            #select out bead count dataframe
+            getNBeads(x) -> nb
+            #match rownames of beadcount dataframe to addresses
+            getProbeInfo(x,type="I")->typeIadd
+            match(typeIadd$AddressA,rownames(nb))->typeImatchA
+            match(typeIadd$AddressB,rownames(nb))->typeImatchB
+
+            #match rownames of beadcount dataframe to addresses
+            getProbeInfo(x,type="II")->typeIIadd
+            match(typeIIadd$Address,rownames(nb))->typeIImatch
+
+            nb->nbcg
+
+                locusNames <- getManifestInfo(x, "locusNames")
+                bc_temp <- matrix(NA_real_, ncol = ncol(x), nrow = length(locusNames),
+                dimnames = list(locusNames, sampleNames(x)))
+
+                TypeII.Name <- getProbeInfo(x, type = "II")$Name
+                bc_temp[TypeII.Name, ] <- nbcg[getProbeInfo(x, type = "II")$AddressA,]
+
+            TypeI <- getProbeInfo(x, type = "I")
+
+                bc_temp->bcB
+                bc_temp->bcA
+
+                bcB[TypeI$Name, ] <- nbcg[TypeI$AddressB,]
+                bcA[TypeI$Name, ] <- nbcg[TypeI$AddressA,]
+
+            which(bcB<3)->bcB3
+            which(bcA<3)->bcA3
+                bcA->bcA2
+                bcB->bcB2
+
+                bcA2[bcA3]<-NA
+                bcB2[bcB3]<-NA
+                bcA2[bcB3]<-NA
+                bcB2[bcA3]<-NA
+
+                data.frame(bcA2)->bcM
+                data.frame(bcA2)->bcU
+                data.frame(bcA2)->bc
+                #row.names = rownames(bc)
+                bc<-as.matrix(bc)
+        }   
+
+
+            bc<-beadcount(RGset)        
+
+            return(bc)
+
+            }""")(RGset)
+
+        bc_py=self.ri2py_dataframe(bc, matrix=False)
+        return bc, bc_py
+
+
+
+    def getNBeads(self,RGset=None):
+        
+        if RGset is None:
+            RGset=self.RGset
+        else:
+            RGset=RGset
+
+        nBeads = robjects.r("""function(RGset)                                               
+                {                                             
+                 nbeads <- getNBeads(RGset)                         
+
+
+                 return (nbeads)         
+
+                }""")(RGset)
+        return nBeads   
+        
+
+
+
+
+    def champ_processing(self, pheno=None, GRset=None, RGset=None, beta=None, M=None, 
+                         autoimpute=True, filterDetP=True, ProbeCutoff=0, SampleCutoff=0.1,
+                         filterBeads=True,beadCutoff=0.05,fixOutlier = True, dropSnPs=True, 
+                         filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, array_type='EPIC',                                  verbose=True, badSampleCutoff=10, rm_badsamples=True,detPFilter=False, detPcut=0.01, addQC=False, imputation_method="imputePCA"):
+        
+        if imputation_method!="methyLImp" and imputation_method!="imputePCA" and imputation_method!="knn":
+            print('You did not specify a valid imputation method!!\n Choose "imputePCA" or "methyLImp" or "knn"...\n now using fallbackmethod "imputePCA"')
+            imputation_method="imputePCA"   
+       
+        if pheno is None:
+            pheno = self.pheno        
+        else:
+            pheno = pheno
+        
+        if RGset is None:
+            RGset = self.RGset        
+        else:
+            RGset = RGset 
+            
+        if GRset is None:
+            try:
+                GRset = self.GRset
+            except:
+                GRset=None    
+        else:
+            GRset = GRset     
+        if verbose:
+            print('\nNow performing badsample removal')           
+        RGset, pheno = self.remove_badsamples(badSampleCutoff=badSampleCutoff, rm_badsamples=rm_badsamples, 
+                                          detPFilter=detPFilter, detPcut=detPcut, SampleCutoff=SampleCutoff,                                                                            addQC=addQC, verbose=verbose, RGset=RGset)
+        
+        
+        if filterNoCG and excludeXreactiveprobes and dropSnPs and filterXY is not False: 
+            if verbose:
+                print('\nNow removing more bad probes ')  
+            GRset, pheno=self.filterCpGs(obj=GRset if GRset else RGset , 
+                                dropSnPs=dropSnPs, 
+                                GRset=True if GRset else False, 
+                                filterXY=filterXY, 
+                                filterNoCG=filterNoCG, 
+                                excludeXreactiveprobes=excludeXreactiveprobes, 
+                                array_type=array_type, 
+                                verbose=verbose)
+        
+        GRset,pheno = robjects.r("""function (RGset, GRset) {  
+                      #colnames(GRset) %in% colnames(RGset)
+                      GRset <- GRset[,colnames(GRset) %in% colnames(RGset)]  
+                      pheno<-pData(GRset)
+                      result=list(GRset,pheno)
+                      return(result)
+             }""")(RGset,GRset)
+        
+            
+        
+        if beta is None:
+            _,beta = self.getBeta(Object = GRset if GRset else RGset)    
+        else:
+            beta = beta  
+
+        if M is None:
+            _,M = self.getM(Object = GRset if GRset else RGset)    
+        else:
+            M = M    
+
+        detP, _ = self.detectionP(RGset=RGset)
+
+        #self.getNBeads(RGset=RGset)     
+        
+        nBeads,_ = self.beadCount(RGset=RGset)
+        
+        
+        if verbose:
+            print('\nNow performing champ_filter function') 
+
+        self.beta_py, self.mval_py,self.pheno_py = self.champ_filter(
+                                                                  beta=beta,
+                                                                  M=M, 
+                                                                  pheno=pheno, 
+                                                                  detP=detP,
+                                                                  beadcount=nBeads,
+                                                                  autoimpute=autoimpute,
+                                                                  filterDetP=filterDetP,
+                                                                  ProbeCutoff=ProbeCutoff,
+                                                                  SampleCutoff = SampleCutoff,
+                                                                  detPcut= detPcut,
+                                                                  filterBeads=filterBeads,
+                                                                  beadCutoff= beadCutoff,
+                                                                  fixOutlier = fixOutlier,
+                                                                  imputation_method=imputation_method
+                                                                 )
+        
+        
+        
+            
+        return self.beta_py, self.mval_py, self.pheno_py
+
+
+
+
+    def champ_filter(self,
+                      beta=None,
+                      M=None, 
+                      pheno=None, 
+                      detP=None,
+                      beadcount=None,
+                      autoimpute=True,
+                      filterDetP=True,
+                      ProbeCutoff=0,
+                      SampleCutoff=0.1,
+                      detPcut=0.01,
+                      filterBeads=True,
+                      beadCutoff=0.05,
+                      fixOutlier = True,
+                      imputation_method="imputePCA"):
+            
+            if pheno==None:
+                pheno=self.pheno
+            
+            
+            if imputation_method!="methyLImp" and imputation_method!="imputePCA" and imputation_method!="knn":
+                print('You did not specify a valid imputation method!!\n Choose "imputePCA" or "methyLImp" or "knn"...\n now using fallbackmethod "imputePCA"')
+                imputation_method="imputePCA"             
+
+
+            if (imputation_method=="methyLImp"): 
+                methyLImp=self.methyLImp()            
+
+
+            if (imputation_method!="methyLImp"):
+                methyLImp=False
+
+            if imputation_method=="imputePCA":
+                imputePCA=self.imputePCA()
+
+
+            if (imputation_method!="imputePCA"):
+                imputePCA=False
+            
+            
+            self.beta, self.mval, self.pheno = robjects.r("""function( beta, 
+                                                                      M,
+                                                                      pd,
+                                                                      detP,
+                                                                      beadcount,
+                                                                      autoimpute,
+                                                                      filterDetP,
+                                                                      ProbeCutoff,
+                                                                      SampleCutoff,
+                                                                      detPcut,
+                                                                      filterBeads,
+                                                                      beadCutoff,
+                                                                      fixOutlier,
+                                                                      imputation_method,
+                                                                      imputePCA,
+                                                                      methyLImp
+                                                                      )    
+         { 
+            
+            champ.filter <- function(beta,
+                                     M,
+                                     pd,
+                                     detP,
+                                     beadcount,
+                                     autoimpute,
+                                     filterDetP,
+                                     ProbeCutoff,
+                                     SampleCutoff,
+                                     detPcut,
+                                     filterBeads,
+                                     beadCutoff,
+                                     fixOutlier,
+                                     imputation_method,
+                                     imputePCA,
+                                     methyLImp
+                                     )
+           {
+            cat("[===========================]")
+            cat("<<<FILTER START>>> ")
+            cat("-----------------------------")
+
+            
+           
+            cat(" Section 1:  Check Input Start ")
+            R_MAX_MEM_SIZE=memory.limit(size = NA)
+            Objects <- list("beta"=beta,
+                            "M"=M)
+
+            Objects <- Objects[which(lapply(Objects,FUN=is.null)==FALSE)]
+
+            if(length(Objects)==0) stop("  At least one Data Set needed.")
+            cat("  You have inputed ",paste(names(Objects),collapse=",")," for Analysis.")
+            if(length(unique(lapply(Objects,FUN=rownames))) != 1) stop("  !!!  You objects have different rownames. Please make sure your Matrix are in accord on Rows.")
+            if(length(unique(lapply(Objects,FUN=colnames))) != 1) stop("  !!!  You objects have different colnames. Please make sure your Matrix are in accord on Rows.")
+            
+            Accessory <- list("detP"=detP,
+                              "beadcount"=beadcount)
+
+            FilterOption <- list("filterDetP"=filterDetP,
+                                 "autoimpute"=autoimpute,
+                                 "filterBeads"=filterBeads
+                                 )
+
+            ### Checking pd file
+            if(!is.null(pd)) 
+           {
+                cat(" pd file provided, checking if it's in accord with Data Matrix...")
+                if(nrow(pd) == ncol(Objects[[1]])) {
+                    if("ID" %in% names(pd)){
+                        if(identical(as.character(pd$ID),colnames(Objects[[1]]))) 
+                            cat("    pd file check success.")
+                        else
+                            stop("    Your pd file's ID is different from your Data Matrix colnames.")
+                    } else {
+                        cat("    !!! Your pd file does not have ID column, we can not check your Sample_Name, please make sure the pd file is correct.")
+                    }
+                } else {
+                    stop("    pd file and Data matrix have different dimensions.")
+                }
+            }
+
+
+
+
+
+            ### Checking Detect P value
+            if(FilterOption$filterDetP == TRUE)
+            {   
+
+
+
+                cat("  Parameter filterDetP is TRUE, checking if detP in accord with Data Matrix...")
+                if(!is.null(Accessory$detP)) {
+                    if(identical(rownames(Accessory$detP),rownames(Objects[[1]])) & identical(colnames(Accessory$detP),colnames(Objects[[1]])))
+                    {
+                        cat("    detP check success.")
+                    }
+                    else {
+                        
+                        cat("    !!! Your detP matrix has been aligned to match the EXACT same rowname and colname as Data Matrix.")
+                        
+                        keep <- ( rownames(Accessory$detP) %in% rownames(Objects[[1]]))
+                        Accessory$detP <- Accessory$detP[keep,]  
+                        keep <- (colnames(Accessory$detP) %in% colnames(Objects[[1]]))
+                        Accessory$detP <- Accessory$detP[,keep]
+                        
+                    }  
+                } else {
+                    cat("    !!! Parameter detP is not found, filterDetP is reset FALSE now.")
+                    FilterOption$filterDetP <- FALSE
+                    Accessory$detP <- NULL
+                }
+            }
+
+
+
+
+
+
+            ### Checking Beadcount value
+            if(FilterOption$filterBeads == TRUE)
+            {
+                cat("  Parameter filterBeads is TRUE, checking if beadcount in accord with Data Matrix...")
+                if(!is.null(Accessory$beadcount)) {
+                    if(identical(rownames(Accessory$beadcount),rownames(Objects[[1]])) & identical(colnames(Accessory$beadcount),colnames(Objects[[1]])))
+                    {
+                        cat("    beadcount check success.")
+                    }
+                    else {
+                                                                       
+                        cat("    !!! Your  beadcount matrix has been aligned to match the EXACT same rowname and colname as Data Matrix.")
+                        
+                        keep <- (rownames(Accessory$beadcount) %in% rownames(Objects[[1]]))
+                        Accessory$beadcount <- Accessory$beadcount[keep,]                         
+                        
+                        keep <- (colnames(Accessory$beadcount) %in% colnames(Objects[[1]]))
+                        Accessory$beadcount <- Accessory$beadcount[,keep]
+                    }  
+                } else {
+                    cat("    !!! Parameter beadcount is not found, filterBeads is reset FALSE now.")
+                    FilterOption$filterBeads <- FALSE
+                    Accessory$beadcount <- NULL
+                }
+            }
+
+
+            if(FilterOption$autoimpute == TRUE)
+            {
+                cat("  parameter autoimpute is TRUE. Checking if the conditions are fulfilled...")
+                if("beta" %in% names(Objects) | "M" %in% names(Objects)){
+                    if(!is.null(detP)) {
+                        cat("    autoimpute check success.")
+                    } else {
+                        cat("    You need to provide a detP value matrix for this option to work. autoimpute has been reset FALSE.")
+                        FilterOption$autoimpute <- FALSE
+                    }
+                } else {
+                    cat("    !!! beta matrix or M matrix are required for impute. autoimpute has been reset FALSE.")
+                    FilterOption$autoimpute <- FALSE
+                }
+            }
+            
+            
+            ### Start Filtering Here
+            cat(" Section 2: Filtering Start >>")
+            
+            
+            if(FilterOption$filterBeads == TRUE)
+            {   
+                
+                cat("  Filtering BeadCount Start")
+                RemainProbe <- rowSums(is.na(Accessory$beadcount)) < beadCutoff*(ncol(Accessory$beadcount))
+                
+                cat("    Filtering probes with a beadcount <3 in at least ",beadCutoff*100,"% of samples.")
+                cat("    Removing ",sum(RemainProbe == FALSE)," probes")
+                
+                Objects <- lapply(Objects,function(x) x[RemainProbe,])
+                #Accessory <- lapply(Accessory,function(x) x[RemainProbe,])
+            }
+
+            
+
+
+            if(FilterOption$filterDetP == TRUE)
+            {
+                cat("  Filtering Detect P value Start")
+                cat("    The fraction of failed positions per sample")
+                cat("    You may need to delete samples with high proportion of failed probes:\n")
+
+                numfail <- matrix(colMeans(Accessory$detP >= detPcut))
+                rownames(numfail) <- colnames(Accessory$detP)
+                colnames(numfail) <- "Failed CpG Fraction."
+                
+                RemainSample <- which(numfail < SampleCutoff)
+                
+                
+                if(any(numfail >= SampleCutoff))
+                {  
+                    cat("    The detSamplecut parameter is : ",SampleCutoff)
+                    cat("    Samples : ", paste(rownames(numfail)[which(numfail >= SampleCutoff)],collapse=",")," will be deleted.")
+                    cat("    There are ",length(RemainSample)," samples remained for analysis.")
+                    Objects <- lapply(Objects,function(x) x[,RemainSample])
+                    Accessory <- lapply(Accessory,function(x) x[,RemainSample])
+                   
+                }
+               
+               
+               
+               RemainProbe <- rowSums(Accessory$detP > detPcut) <= ProbeCutoff * length(RemainSample)
+               if(ProbeCutoff==0)
+               {
+                   cat("\n    Filtering probes with a detection p-value above ",detPcut,".")
+                   cat("    Removing ",sum(RemainProbe==FALSE)," probes.")
+                  cat("    If a large number of probes have been removed, we suggests you to identify potentially bad samples")
+               } else {
+                   cat("\n    Filtering probes with a detection p-value above ",detPcut," in at least", ProbeCutoff*100,"% Samples.")
+                   cat("    Removing ",sum(RemainProbe==FALSE)," probes.")
+                   cat("    If a large number of probes have been removed, we suggests you to identify potentially bad samples")
+               }
+
+               Objects <- lapply(Objects,function(x) x[RemainProbe,])
+               Accessory <- lapply(Accessory,function(x) x[RemainProbe,])
+               if(sum(Accessory$detP > detPcut) > 0) cat(" There are still ",sum(Accessory$detP > detPcut), " failed probes exist in your data set, imputation is recommended.")
+
+                
+            }
+
+
+           
+           
+           
+           
+           
+            if(FilterOption$autoimpute == TRUE)
+            {
+               cat("  Autoimpute Start") 
+               if(sum(Accessory$detP > detPcut) == 0) 
+               {
+                   cat("    No NAs (failed probes) exist in your data set any more, you don't need to do any imputation.")
+               } else
+               {
+                   cat("    There are ",sum(Accessory$detP > detPcut), " NAs (failed probes) exists in your data set.")
+                   cat("    Imputing will be conducted for remain NAs. \n") 
+
+                                     
+                   if("beta" %in% names(Objects))
+                   {
+                      cat("    Doing imputation on beta matrix.")
+                      Objects$beta[Accessory$detP > detPcut] <- NA
+                      if (imputation_method=="knn")
+                                     {  
+                                     cat("   Performing impute.knn.")
+                                     ### Using sink function to remove messages
+                                     zz <- file("ImputeMessage.Rout", open="wt")
+                                     sink(zz)
+                                     sink(zz, type="message")                                     
+                                      library(impute)
+                                     
+                                     Objects$beta <- impute.knn(Objects$beta,k=5)$data
+                                     
+                                     sink(type="message")
+                                     sink()  
+                                     
+                                     }
+                      
+                      if(imputation_method=="methyLImp")
+                                     { cat("   Performing methyLImp")
+                                         methyLImps<-methyLImp$methyLImp
+                                         plogit<-methyLImp$plogit
+                                         inv.plogit<-methyLImp$inv.plogit 
+                                         pinvr<-methyLImp$pinvr                                         
+                                         
+                                         Objects$beta<-methyLImps(t(Objects$beta), min = 0, max = 1, max.sv = NULL, col.list = NULL)
+                                         Objects$beta<-t(Objects$beta)
+                                        
+                                     }
+                      
+                      if(imputation_method=="imputePCA")
+                                     { cat("   Performing imputePCA")
+                                       imputePCAs<-imputePCA$imputePCA
+                                       FactoMineR.svd.triplet<-imputePCA$FactoMineR.svd.triplet
+                                                                   
+                                         
+                                         Objects$beta <- imputePCAs(Objects$beta)
+                                         Objects$beta <- Objects$beta$completeObs
+
+                                         Objects$beta[Objects$beta<0] <- 0
+                                         Objects$beta[Objects$beta>1] <- 1  
+                                         
+                                     }
+                      
+                      
+                      
+                      
+                       
+                   }
+                   if("M" %in% names(Objects))
+                   {
+                       cat("    Doing imputation on M matrix.")
+                       Objects$M[Accessory$detP > detPcut] <- NA
+                       
+                       if (imputation_method=="knn")
+                                     {  
+                                     cat("   Performing impute.knn.")
+                                     ### Using sink function to remove messages
+                                     zz <- file("ImputeMessage.Rout", open="wt")
+                                     sink(zz)
+                                     sink(zz, type="message")                                     
+                                     library(impute)
+                                     
+                                     Objects$M <- impute.knn(Objects$M,k=5)$data
+                                     
+                                     sink(type="message")
+                                     sink()  
+                                     
+                                     }
+                      
+                      if(imputation_method=="methyLImp")
+                                     { cat("   Performing methyLImp")
+                                         methyLImps<-methyLImp$methyLImp
+                                         plogit<-methyLImp$plogit
+                                         inv.plogit<-methyLImp$inv.plogit 
+                                         pinvr<-methyLImp$pinvr                                         
+                                         
+                                         Objects$M<-methyLImps(t(Objects$M), min = -16, max = 16, max.sv = NULL, col.list = NULL)
+                                         Objects$M<-t(Objects$M)
+                                        
+                                     }
+                      
+                      if(imputation_method=="imputePCA")
+                                     { cat("   Performing imputePCA")
+                                       imputePCAs<-imputePCA$imputePCA
+                                       FactoMineR.svd.triplet<-imputePCA$FactoMineR.svd.triplet
+                                                                   
+                                         
+                                         Objects$M <- imputePCAs(Objects$M)
+                                         Objects$M <- Objects$M$completeObs                                         
+                                         
+                                     }                
+                       
+                       
+                       
+                   }
+                  
+               }
+            }
+             
+
+
+            
+
+            
+            #rownames(Accessory$detP) %in% rownames(Objects[[1]]))
+            #mval <- mval[,colnames(mval) %in% rownames(pheno)] 
+            if(!is.null(pd))
+            {
+                cat("  Updating PD file")
+                if(FilterOption$filterDetP==FALSE)
+                {
+                    cat("    filterDetP parameter is FALSE, so no Sample Would be removed.")
+                    RemainSample <- 1:nrow(pd)
+                }
+                pd <- pd[RemainSample,]
+                Objects <- append(Objects,list(pd=pd))
+            }
+
+
+
+
+            
+
+            if(fixOutlier & "beta" %in% names(Objects))
+            {
+                cat("  Fixing Outliers Start")
+                cat("    Replacing all value smaller/equal to 0 with smallest positive value.")
+                Objects$beta[Objects$beta <= 0] <- min(Objects$beta[which(Objects$beta > 0)])
+                cat("    Replacing all value greater/equal to 1 with largest value below 1..")
+                Objects$beta[Objects$beta >= 1] <- max(Objects$beta[which(Objects$beta < 1)])
+            }
+
+
+
+            cat("[ Section 2: Filtering Done ]")
+
+            cat(" All filterings are Done, now you have ", nrow(Objects[[1]]), " probes and ",ncol(Objects[[1]]), " samples.\n")
+
+            cat("[<<<<< ChAMP.FILTER END >>>>>>]")
+            cat("[===========================]")
+            cat("[You may want to process champ.QC() next.]\n")
+            return(Objects)
+      }
     
-    def reduce(self, GRset=None, RGset=None, what="both", cutp=0.01, cutsamples=0.95, cutcpgs=0.95, verbose=True, autoimpute=True):
+
+
+            Objects<-champ.filter(beta,
+                                     M,
+                                     pd,
+                                     detP,
+                                     beadcount,
+                                     autoimpute,
+                                     filterDetP,
+                                     ProbeCutoff,
+                                     SampleCutoff,
+                                     detPcut,
+                                     filterBeads,
+                                     beadCutoff,
+                                     fixOutlier,
+                                     imputation_method,
+                                     imputePCA,
+                                     methyLImp
+                                     )
+
+            result=list(Objects$beta, Objects$M, Objects$pd)
+
+            return (result)         
+
+                                            
+                                            
+                                            }""")(beta, 
+                                                  M,
+                                                  pheno,                                                                                  
+                                                  detP,
+                                                  beadcount,
+                                                  autoimpute,
+                                                  filterDetP,
+                                                  ProbeCutoff,
+                                                  SampleCutoff,
+                                                  detPcut,
+                                                  filterBeads,
+                                                  beadCutoff,                                            
+                                                  fixOutlier,
+                                                  imputation_method,
+                                                  imputePCA,
+                                                  methyLImp
+                                                  )       
+            
+            
+            
+            self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
+
+            self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)
+            try:
+                self.pheno_py = self.ri2py_dataframe(r_dat=self.pheno, matrix=False)
+            except:
+                self.pheno_py = self.ri2py_dataframe(r_dat=self.pheno, matrix=True)
+
+            
+                
+            return self.beta_py, self.mval_py, self.pheno_py
+
+    def methyLImp(self):
+        methyLImp=robjects.r("""function(){
+        
+        
+            ## methyLImp - linear imputation model for continuous variables
+            ## 
+            ## This R script contains the methyLImp function and other
+            ## subroutines needed for calculation.
+            ## 
+            ## Author: P. Di Lena, pietro.dilena@unibo.it
+
+
+            # Pseudo-logit function with range restricted to [-X,X] where
+            # X depends on the double machine precision.
+            plogit <- function(x, min=0, max=1)
+            {
+                p <- (x-min)/(max-min)
+                # fix -Inf
+                p <- ifelse(p <   .Machine$double.neg.eps,  .Machine$double.neg.eps,p)
+                # fix +Inf
+                p <- ifelse(p > 1-.Machine$double.neg.eps,1-.Machine$double.neg.eps,p)
+                log(p/(1-p))
+            }
+
+            # Inverse of the pseudo-logit function.
+            inv.plogit <- function(x, min=0, max=1)
+            {
+                p <- exp(x)/(1+exp(x))
+                # fix problems with +Inf
+                p <- ifelse(is.na(p) & !is.na(x), 1, p )               
+                # fix 0 rounding
+                p <- ifelse(p <= exp(plogit(0))/(1+exp(plogit(0))), 0, p)
+                p * (max-min) + min
+            }
+
+            # Computes the Moore-Penrose generalized inverse of a matrix. Allows rank
+            # reduction of the generalized inverse.
+            # 
+            # This function is directly taken from MASS package (code on GPLv3 license)
+            # and modified in order to include the rank reduction option. The added code
+            # for rank reduction is commented in the implementation.
+            #
+            pinvr <- function(X, max.sv = min(dim(X)), tol = sqrt(.Machine$double.eps))
+            {
+                #
+                # based on suggestions of R. M. Heiberger, T. M. Hesterberg and WNV
+                #
+                if(length(dim(X)) > 2L || !(is.numeric(X) || is.complex(X)))
+                    stop("'X' must be a numeric or complex matrix")
+                if(!is.matrix(X)) X <- as.matrix(X)
+                Xsvd <- svd(X)
+                if(is.complex(X)) Xsvd$u <- Conj(Xsvd$u)
+                Positive <- Xsvd$d > max(tol * Xsvd$d[1L], 0)
+
+                # Rank reduction extension: START
+                max.sv      <- min(ifelse(max.sv < 0, 1, max.sv),min(dim(X)))
+                L           <- logical(length(Positive))
+                L[seq_len(max.sv)] <- TRUE
+                Positive    <- Positive & L
+                # Rank reduction extension: END
+
+                if (all(Positive)) Xsvd$v %*% (1/Xsvd$d * t(Xsvd$u))
+                else if(!any(Positive)) array(0, dim(X)[2L:1L])
+                else Xsvd$v[, Positive, drop=FALSE] %*% ((1/Xsvd$d[Positive]) * t(Xsvd$u[, Positive, drop=FALSE]))
+            }
+
+            # methylation data Linear Imputation model
+            #
+            # Arguments:
+            # dat      = data matrix with missing values, where samples are on the rows 
+            #            and variables on the columns
+            # min      = minimum value for bounded-range variables. Default: 0 (we assume
+            #            beta-value representation of methylation data). Unrestricted range
+            #            if min or max = NULL        
+            # max      = maximum value for bounded-range variables. Default: 1 (we assume
+            #            beta-value representation of methylation data). Unrestricted range
+            #            if min or max = NULL.
+            # max.sv   = maximum number of singuar value to be used in the pseudoinverse.
+            #            If NULL use all singular values.
+            # col.list = restricts the imputation on the specified columns.
+            #      
+        
+        
+        
+            methyLImp <- function(dat, min = 0, max = 1, max.sv = NULL, col.list = NULL)
+        {
+            out    <- dat
+            NAcols <- colSums(is.na(dat)) > 0; NAcols <- which(NAcols)
+
+            # Convert col.list, if any, from names to numbers
+            if(is.character(col.list)) {
+                if(is.null(colnames(dat)))
+                    col.list <- NULL
+                else
+                    col.list <- which(colnames(dat) %in% col.list)
+            }
+
+            # If all the colums have a missing value we cannot do anything
+            if(length(NAcols) < ncol(dat)) {
+                # Columns with all NAs or a single not NA value (to be excluded:
+            # not enough information for imputation)
+                NAall  <- colSums(is.na(dat))<(nrow(dat)-1); NAall <- which(NAall)
+                # List of columns to impute
+                NAlist <- intersect(NAcols, NAall)
+                # Filter the columns to impute according to col.list
+                if(!is.null(col.list))
+                    NAlist <- intersect(NAlist,col.list)
+
+                while(length(NAlist) != 0) {
+                    col_id <- NAlist[1]
+
+                    # List of rows for which col_id is NA
+                    row_id <- which(is.na(dat[,col_id])==TRUE)
+
+                    # Colum indexes of NA columns for all the row_id(s)
+                    if(length(row_id) == 1)
+                        tmp1 <- which(is.na(dat[row_id,])==TRUE)
+                    else
+                        tmp1 <- which(colSums(is.na(dat[row_id,])) == length(row_id))
+
+                    # Column indexes: no colum element is NA for the rows not in row_id
+                    tmp2   <- which(colSums(is.na(dat[-row_id,])) == 0)
+
+                    # List of colums in NAlist that are NA only for all the row_id(s)
+                    NAcols_rowid <- intersect(intersect(tmp1,tmp2),NAlist)
+
+                    # Extract submatrices for regression
+                    A <- dat[-row_id,-NAcols]
+                    B <- dat[-row_id,NAcols_rowid]
+                    C <- dat[row_id,-NAcols]
+
+                    # Updates or computes max.sv from A. Negative or zero value not allowed
+                    max.sv <- max(ifelse(is.null(max.sv),min(dim(A)),max.sv),1)
+
+                    if(is.null(min) || is.null(max)) {
+                        # Unrestricted-range imputation
+                        # X <- pinvr(A,rank)%*%B (X = A^-1*B)
+                        # O <- C%*%X             (O = C*X)
+                        out[row_id,NAcols_rowid] <- C%*%(pinvr(A,max.sv)%*%B)
+                    } else { 
+                        # Bounde-range imputation
+                        # X <- pinvr(A,rank)%*%logit(B,min,max) (X = A^-1*logit(B))
+                        # P <- inv.logit(C%*%X,min,max)         (P = logit^-1(C*X))
+                        out[row_id,NAcols_rowid] <- inv.plogit(C%*%(pinvr(A,max.sv)%*%plogit(B,min,max)),min,max)
+                    }
+
+                    # Update NA column list
+                    NAlist <- setdiff(NAlist,NAcols_rowid)
+                }
+            }
+            return(out)
+        }
+        
+        result=list(plogit=plogit, inv.plogit=inv.plogit, pinvr=pinvr, methyLImp= methyLImp)
+        
+        return(result)
+        }""")()
+        
+        return methyLImp
+
+    def imputePCA(self):
+        
+        imputePCA=robjects.r("""function(){
+             
+            FactoMineR.svd.triplet = function (X, row.w = NULL, col.w = NULL,ncp=Inf) {
+ 
+ 
+            tryCatch.W.E <- function(expr){  ## function proposed by Maechler
+                W <- NULL
+                w.handler <- function(w){ # warning handler
+                    W <<- w
+                    invokeRestart("muffleWarning")
+                }
+                list(value = withCallingHandlers(tryCatch(expr, error = function(e) e),
+                                                 warning = w.handler),
+                     warning = W)
+            }
+
+
+               if (is.null(row.w)) row.w <- rep(1/nrow(X), nrow(X))
+               if (is.null(col.w)) col.w <- rep(1, ncol(X))
+               ncp <- min(ncp,nrow(X)-1,ncol(X))
+               row.w <- row.w / sum(row.w)
+                X <- t(t(X)*sqrt(col.w))*sqrt(row.w)
+            if (ncol(X)==1){
+                  mult <- sign(as.vector(crossprod(rep(1,nrow(V)),as.matrix(V))))
+                  mult[mult==0] <- 1
+                  U <- t(t(U)*mult)
+                  V <- t(t(V)*mult)
+                
+                U <- U/sqrt(row.w)
+                V <- V/sqrt(col.w)
+            }
+            else{
+                svd.usuelle <- tryCatch.W.E(svd(t(X),nu=ncp,nv=ncp))$val
+                if (names(svd.usuelle)[[1]]=="message"){
+                  svd.usuelle <- tryCatch.W.E(svd(X,nu=ncp,nv=ncp))$val
+                  if (names(svd.usuelle)[[1]]=="d"){
+                    aux <- svd.usuelle$u
+                    svd.usuelle$u <- svd.usuelle$v
+                    svd.usuelle$v <- aux
+                  } else{
+                      bb <- eigen(crossprod(t(X),t(X)),symmetric=TRUE)
+                      svd.usuelle <- vector(mode = "list", length = 3)
+                      svd.usuelle$d[svd.usuelle$d<0]=0
+                      svd.usuelle$d <- sqrt(svd.usuelle$d)
+                      svd.usuelle$v <- bb$vec[,1:ncp]
+                      svd.usuelle$u <- t(t(crossprod(X,svd.usuelle$v))/svd.usuelle$d[1:ncp])
+                  }
+                }
+                U <-  svd.usuelle$v
+                V <- svd.usuelle$u
+                mult <- sign(as.vector(crossprod(rep(1,nrow(V)),as.matrix(V))))
+                mult[mult==0] <- 1
+                V <- t(t(V)*mult)/sqrt(col.w)
+                U <- t(t(U)*mult)/sqrt(row.w)
+            }
+                vs <- svd.usuelle$d[1:min(ncol(X),nrow(X)-1)]
+                num <- which(vs[1:ncp]<1e-15)
+                if (length(num)==1){
+                  U[,num] <- U[,num,drop=FALSE]*vs[num]
+                  V[,num] <- V[,num,drop=FALSE]*vs[num]
+                } 
+                if (length(num)>1){
+                  U[,num] <- t(t(U[,num])*vs[num])
+                  V[,num] <- t(t(V[,num])*vs[num])
+                }
+                res <- list(vs = vs, U = U, V = V)
+                return(res)
+            }
+
+        
+             
+            
+            imputePCA <- function (X, ncp = 2, scale=TRUE, method=c("Regularized","EM"),row.w=NULL,coeff.ridge=1,threshold = 1e-6,seed = NULL,nb.init=1,maxiter=1000,...){
+
+        impute <- function (X, ncp = 4, scale=TRUE, method=NULL,threshold = 1e-6,seed = NULL,init=1,maxiter=1000,row.w=NULL,coeff.ridge=1,...){
+            moy.p <- function(V, poids) {
+                res <- sum(V * poids,na.rm=TRUE)/sum(poids[!is.na(V)])
+            }
+            ec <- function(V, poids) {
+                res <- sqrt(sum(V^2 * poids,na.rm=TRUE)/sum(poids[!is.na(V)]))
+            }
+
+           nb.iter <- 1
+           old <- Inf
+           objective <- 0
+           if (!is.null(seed)){set.seed(seed)}
+           X <- as.matrix(X)
+           ncp <- min(ncp,ncol(X),nrow(X)-1)
+           missing <- which(is.na(X))
+           mean.p <- apply(X, 2, moy.p,row.w)
+           Xhat <- t(t(X)-mean.p)
+           et <- apply(Xhat, 2, ec,row.w)
+           if (scale) Xhat <- t(t(Xhat)/et)
+           if (any(is.na(X))) Xhat[missing] <- 0
+           if (init>1) Xhat[missing] <- rnorm(length(missing)) ## random initialization
+           fittedX <- Xhat
+           if (ncp==0) nb.iter=0
+
+           while (nb.iter > 0) {
+               Xhat[missing] <- fittedX[missing]
+               if (scale) Xhat=t(t(Xhat)*et)
+               Xhat <- t(t(Xhat)+mean.p)
+               mean.p <- apply(Xhat, 2, moy.p,row.w)
+               Xhat <- t(t(Xhat)-mean.p)
+               et <- apply(Xhat, 2, ec,row.w)
+               if (scale) Xhat <- t(t(Xhat)/et)
+
+               svd.res <- FactoMineR.svd.triplet(Xhat,row.w=row.w,ncp=ncp)
+        #       sigma2 <- mean(svd.res$vs[-(1:ncp)]^2)
+               sigma2  <- nrow(X)*ncol(X)/min(ncol(X),nrow(X)-1)* sum((svd.res$vs[-c(1:ncp)]^2)/((nrow(X)-1) * ncol(X) - (nrow(X)-1) * ncp - ncol(X) * ncp + ncp^2))
+               sigma2 <- min(sigma2*coeff.ridge,svd.res$vs[ncp+1]^2)
+               if (method=="em") sigma2 <-0
+               lambda.shrinked=(svd.res$vs[1:ncp]^2-sigma2)/svd.res$vs[1:ncp]
+               fittedX = tcrossprod(t(t(svd.res$U[,1:ncp,drop=FALSE]*row.w)*lambda.shrinked),svd.res$V[,1:ncp,drop=FALSE])
+               fittedX <- fittedX/row.w
+               diff <- Xhat-fittedX
+               diff[missing] <- 0
+               objective <- sum(diff^2*row.w)
+        #       objective <- mean((Xhat[-missing]-fittedX[-missing])^2)
+               criterion <- abs(1 - objective/old)
+               old <- objective
+               nb.iter <- nb.iter + 1
+               if (!is.nan(criterion)) {
+                 if ((criterion < threshold) && (nb.iter > 5))  nb.iter <- 0
+                 if ((objective < threshold) && (nb.iter > 5))  nb.iter <- 0
+               }
+               if (nb.iter > maxiter) {
+                 nb.iter <- 0
+                 warning(paste("Stopped after ",maxiter," iterations"))
+               }
+           }
+           if (scale) Xhat <- t(t(Xhat)*et)
+           Xhat <- t(t(Xhat)+mean.p)
+           completeObs <- X
+           completeObs[missing] <- Xhat[missing]
+           if (scale) fittedX <- t(t(fittedX)*et)
+           fittedX <- t(t(fittedX)+mean.p)
+
+           result <- list()
+           result$completeObs <- completeObs
+           result$fittedX <- fittedX
+           return(result) 
+        }
+
+        #### Main program
+         method <- match.arg(method,c("Regularized","regularized","EM","em"),several.ok=T)[1]
+         obj=Inf
+         method <- tolower(method)
+         if (ncp>min(nrow(X)-2,ncol(X)-1)) stop("ncp is too large")
+         if (is.null(row.w)) row.w = rep(1,nrow(X))/nrow(X)
+         for (i in 1:nb.init){
+          if (!any(is.na(X))) return(X)
+          res.impute=impute(X, ncp=ncp, scale=scale, method=method, threshold = threshold,seed=if(!is.null(seed)){(seed*(i-1))}else{NULL},init=i,maxiter=maxiter,row.w=row.w,coeff.ridge=coeff.ridge)
+          if (mean((res.impute$fittedX[!is.na(X)]-X[!is.na(X)])^2) < obj){
+            res <- res.impute
+            obj <- mean((res.impute$fittedX[!is.na(X)]-X[!is.na(X)])^2)
+          }
+         }
+        return(res)
+        }
+        
+        result=list(FactoMineR.svd.triplet=FactoMineR.svd.triplet, imputePCA=imputePCA)
+        return(result) 
+        
+        }""")()
+        
+        return imputePCA
+        
+        
+        
+    def reduce(self, GRset=None, RGset=None, what="both", detPcut=0.01, SampleCutoff=0.1, ProbeCutoff=0, verbose=True, autoimpute=True, imputation_method="imputePCA", beadCutoff=0.05):
         
         if GRset:
             GRset=GRset
@@ -1499,8 +2784,28 @@ class PreProcessIDATs:
             RGset = RGset
         else:
             RGset = self.RGset_filt 
-
-        obj, self.pheno = robjects.r("""function (GRset, RGset, what=c("beta", "M"), cutp, cutsamples, cutcpgs, verbose, autoimpute, ...) { 
+        
+        if imputation_method!="methyLImp" and imputation_method!="imputePCA" and imputation_method!="knn":
+            print('You did not specify a valid imputation method!!\n Choose "imputePCA" or "methyLImp" or "knn"...\n now using fallbackmethod "imputePCA"')
+            imputation_method="imputePCA"                
+                 
+            
+        if (imputation_method=="methyLImp"): 
+            methyLImp=self.methyLImp()            
+                        
+            
+        if (imputation_method!="methyLImp"):
+            methyLImp=False
+            
+        if imputation_method=="imputePCA":
+            imputePCA=self.imputePCA()
+            
+        
+        if (imputation_method!="imputePCA"):
+            imputePCA=False
+           
+            
+        obj, self.pheno = robjects.r("""function (GRset, RGset, what=c("beta", "M","both"), cutp, cutsamples, cutcpgs, verbose, autoimpute, methyLImp, imputePCA, imputation_method,beadCutoff,...) { 
 
             ##' Extract functional normalized data according to filter data
             ##'
@@ -1521,7 +2826,7 @@ class PreProcessIDATs:
             ##' @author mvaniterson
             ##' @export
             ##' @importFrom utils data
-            reduce <- function(GRset, RGset, what=c("beta", "M", "both"), cutp=0.01, cutsamples=0.95, cutcpgs=0.95, verbose=TRUE, autoimpute, ...) {
+            reduce <- function(GRset, RGset, what=c("beta", "M", "both"), cutp=0.01, cutsamples=0.1, cutcpgs=0, verbose=TRUE, autoimpute,methyLImp, imputePCA, imputation_method,beadCutoff, ...) {
 
                 what <- match.arg(what)
 
@@ -1581,7 +2886,10 @@ class PreProcessIDATs:
                 if(verbose & what!="both")
                 {
                          cat("On average", round(100*sum(is.na(matfilt))/prod(dim(matfilt)), 2),"% of the probes (",nrow(matfilt),") were set to NA in the probe filtering step! \n")
+                    RemainProbe <- rowSums(is.na(matfilt)) < beadCutoff*(ncol(matfilt))
+                    matfilt<-matfilt[RemainProbe,]     
                     mid <- match(rownames(matfilt), rownames(matnorm))
+                   # keep <- ( rownames(Accessory$detP) %in% rownames(Objects[[1]]))
                     matnorm <- matnorm[mid,]
                     matnorm[is.na(matfilt)] <- NA
 
@@ -1591,36 +2899,44 @@ class PreProcessIDATs:
                     idPvalmat <- idPvalmat[mid,]
                     matnorm[idPvalmat] <- NA
 
-                    ##Replaced by gap_hunting
-                    ##set chen CpGs/probes NA
-                    ##if(verbose)
-                    ##    message("Removing cross-reactive or polymorphic probes...")
-
-                    ##data("chen", package="Leiden450K")
-                    ##matnorm[rownames(matnorm) %in% names(chenProbes),] <- NA
-
-                    ##calculate success rates and reduce
+                    
+                    ##calculate failure rates and reduce
                     if(verbose)
-                        cat("Calculate success rates and reduce... \n")
-
-                    ##srCols <- apply(matnorm, 2, function(x) sum(!is.na(x))/(length(x) - 30969)) ##chen CpGs excluded
-                    srCols <- apply(matnorm, 2, function(x) sum(!is.na(x))/(length(x)))
+                        cat("Calculate failure/success rates and reduce... \n")                    
+                    
+                    
+                    ##srCols <- apply(matnorm, 2, function(x) sum(is.na(x))/(length(x) - 30969)) ##chen CpGs excluded
+                    frCols <- apply(matnorm, 2, function(x) sum(is.na(x))/(length(x)))                    
                     srRows <- apply(matnorm, 1, function(x) sum(!is.na(x))/length(x))
+                    ##rowSums(Accessory$detP > detPcut) <= ProbeCutoff * length(RemainSample)
 
                     if(verbose){
-                        cat("Percentage of samples having success rate above", cutsamples, "is", round(100*sum(srCols > cutsamples)/length(srCols),2),"% \n")
+                        cat("Percentage of samples having failure rate below", cutsamples, "is", round(100*sum(frCols < cutsamples)/length(frCols),2),"% \n")
+                        cat("Samples having failure rate above", cutsamples, paste(colnames(matnorm[,frCols > cutsamples]),collapse=",")," and will be deleted. ")                        
+                        
+                        
                         cat("Percentage of CpGs having success rate above", cutcpgs, "is", round(100*sum(srRows > cutcpgs)/length(srRows),2),"% \n")
+                        
+                        
+                        
                     }
-                    matnorms<-matnorm[srRows > cutcpgs,  srCols > cutsamples]
+                    
+                    matnorms<-matnorm[srRows > cutcpgs,  frCols < cutsamples]
                 }
                 
                 if(verbose & what=="both")
-                {
+                {    
+                    RemainProbe <- rowSums(is.na(matfiltbeta)) < beadCutoff*(ncol(matfiltbeta))
+                    matfiltbeta<-matfiltbeta[RemainProbe,] 
                       cat("On average", round(100*sum(is.na(matfiltbeta))/prod(dim(matfiltbeta)), 2),"% of the beta probes (",nrow(matfiltbeta),") were set to NA in the probe filtering step! \n")
+                     
                     mid <- match(rownames(matfiltbeta), rownames(matnormbeta))
                     matnormbeta <- matnormbeta[mid,]
                     matnormbeta[is.na(matfiltbeta)] <- NA
                     
+                    
+                    RemainProbe <- rowSums(is.na(matfiltM)) < beadCutoff*(ncol(matfiltM))
+                    matfiltM<-matfiltM[RemainProbe,] 
                     cat("On average", round(100*sum(is.na(matfiltM))/prod(dim(matfiltM)), 2),"% of the M probes (",nrow(matfiltM),") were set to NA in the probe filtering step! \n")
                     mid <- match(rownames(matfiltM), rownames(matnormM))
                     matnormM <- matnormM[mid,]
@@ -1641,67 +2957,165 @@ class PreProcessIDATs:
                     
                     ##calculate success rates and reduce
                     if(verbose)
-                        cat("Calculate success rates and reduce... \n")
+                         cat("Calculate failure/success rates and reduce... \n")
 
-                    srColsbeta <- apply(matnormbeta, 2, function(x) sum(!is.na(x))/(length(x)))
+                    frColsbeta <- apply(matnormbeta, 2, function(x) sum(is.na(x))/(length(x)))
                     srRowsbeta <- apply(matnormbeta, 1, function(x) sum(!is.na(x))/length(x))
                     
-                    srColsM <- apply(matnormM, 2, function(x) sum(!is.na(x))/(length(x)))
+                    frColsM <- apply(matnormM, 2, function(x) sum(is.na(x))/(length(x)))
                     srRowsM <- apply(matnormM, 1, function(x) sum(!is.na(x))/length(x))
 
                     if(verbose){
-                        cat("Percentage of beta samples having success rate above", cutsamples, "is", round(100*sum(srColsbeta > cutsamples)/length(srColsbeta),2),"% \n")
+                        cat("Percentage of beta samples having failure rate below", cutsamples, "is", round(100*sum(frColsbeta < cutsamples)/length(frColsbeta),2),"% \n")
+                        cat("Percentage of M samples having failure rate below", cutsamples, "is", round(100*sum(frColsM < cutsamples)/length(frColsM),2),"% \n")
                         cat("Percentage of beta CpGs having success rate above", cutcpgs, "is", round(100*sum(srRowsbeta > cutcpgs)/length(srRowsbeta),2),"% \n")
-                        cat("Percentage of M samples having success rate above", cutsamples, "is", round(100*sum(srColsM > cutsamples)/length(srColsM),2),"% \n")
                         cat("Percentage of M CpGs having success rate above", cutcpgs, "is", round(100*sum(srRowsM > cutcpgs)/length(srRowsM),2),"% \n")
+                        
+                        cat("Samples having failure rate above", cutsamples, paste(colnames(matnormM[,frColsM > cutsamples]),collapse=",")," and will be deleted. ")                        
+                        
                     }
-                    matnormsbeta<-matnormbeta[srRowsbeta > cutcpgs,  srColsbeta > cutsamples]
-                    matnormsM<-matnormM[srRowsM > cutcpgs,  srColsM > cutsamples]
+                    matnormsbeta<-matnormbeta[srRowsbeta > cutcpgs,  frColsbeta < cutsamples]
+                    matnormsM<-matnormM[srRowsM > cutcpgs,  frColsM < cutsamples]
                 }
                 
                 
                 
                 if(autoimpute)
                 {  
-                   if(verbose){
-                   cat("\n  Autoimpute Start") 
-                   }
-                   if(sum(is.na(idPvalmat)) == 0) {
-                      
                        if(verbose){
-                       cat("    No NAs (failed probes) exist in your data set any more, you don't need to do any imputation.")
-                       }
-                   } 
-                   
-                   else
-                   {   if(verbose){
-                       cat("    There are ",sum(is.na(idPvalmat)), " NAs (failed probes) exists in your data set.")
-                       cat("    Impute.knn will be conducted for remain NAs. (NOT suitable for small data sets)\n")
+                       cat("\n  Autoimpute Start") 
                        }
                       
-                      ### Using sink function to remove messages
-                        zz <- file("ImputeMessage.Rout", open="wt")
-                        sink(zz)
-                        sink(zz, type="message")               
 
-                        if(verbose){
-                            
-                            cat("    Doing imputation on matrix.")
+                           if(sum(is.na(idPvalmat)) == 0) 
+                          {
+
+                               if(verbose){
+                               cat("    No NAs (failed probes) exist in your data set any more, you don't need to do any imputation.")
+                               }
+                           } 
+
+                           else
+                           {   if(verbose){
+                               cat("    There are ",sum(is.na(idPvalmat)), " NAs (failed probes) exists in your data set.")
+                               cat("    Imputing will be conducted for remain NAs. \n")                               
+                               
+                               }
+
+                                            
+
+                                if(verbose){
+
+                                    cat("    Doing imputation on matrix.")
+                                    }
+                                 library(impute)
+                                 if (what!="both")
+                                 {    
+                                     if (imputation_method=="knn")
+                                     {  
+                                     cat("   Performing impute.knn.")
+                                     ### Using sink function to remove messages
+                                     zz <- file("ImputeMessage.Rout", open="wt")
+                                     sink(zz)
+                                     sink(zz, type="message")                                     
+                                     
+                                     matnorms <- impute.knn(matnorms,k=5)$data 
+                                     
+                                     sink(type="message")
+                                     sink()  
+                                     
+                                     }
+                                      if(imputation_method=="methyLImp")
+                                     { cat("   Performing methyLImp")
+                                         methyLImps<-methyLImp$methyLImp
+                                         plogit<-methyLImp$plogit
+                                         inv.plogit<-methyLImp$inv.plogit 
+                                         pinvr<-methyLImp$pinvr
+                                         
+                                         if  (what=="M")
+                                         {
+                                         matnorms<-methyLImps(t(matnorms), min = -16, max = 16, max.sv = NULL, col.list = NULL)
+                                         matnorms<-t(matnorms)
+                                         }
+                                         else
+                                         {
+                                         matnorms<-methyLImps(t(matnorms), min = 0, max = 1, max.sv = NULL, col.list = NULL)
+                                         matnorms<-t(matnorms)
+                                         }
+                                     }
+                                      if(imputation_method=="imputePCA")
+                                     { cat("   Performing imputePCA")
+                                       imputePCAs<-imputePCA$imputePCA
+                                       FactoMineR.svd.triplet<-imputePCA$FactoMineR.svd.triplet
+                                         if  (what=="M")
+                                         {                             
+                                         matnorms <- imputePCAs(matnorms)
+                                         matnorms <- matnorms$completeObs
+                                         }
+                                         else
+                                         {
+                                         matnorms <- imputePCAs(matnorms)
+                                         matnorms <- matnorms$completeObs
+
+                                         matnorms[matnorms<0] <- 0
+                                         matnorms[matnorms>1] <- 1  
+                                         }
+                                     }
+                                     
+                                     
+                                 }
+                                 else
+                                 {                                     
+                                     if (imputation_method=="knn")
+                                     {                                         
+                                     cat("   Performing impute.knn.")  
+                                     ### Using sink function to remove messages
+                                     zz <- file("ImputeMessage.Rout", open="wt")
+                                     sink(zz)
+                                     sink(zz, type="message")
+                                     
+                                     matnormsM <- impute.knn(matnormsM,k=5)$data
+                                     matnormsbeta <- impute.knn(matnormsbeta,k=5)$data
+                                     
+                                     sink(type="message")
+                                     sink()  
+                                     
+                                     }
+                                     if(imputation_method=="methyLImp")
+                                     {cat("   Performing methyLImp")
+                                     methyLImps<-methyLImp$methyLImp
+                                     plogit<-methyLImp$plogit
+                                     inv.plogit<-methyLImp$inv.plogit 
+                                     pinvr<-methyLImp$pinvr                                     
+                                     
+                                     matnormsM<-methyLImps(t(matnormsM), min = -16, max = 16, max.sv = NULL, col.list = NULL)
+                                     matnormsM<-t(matnormsM)
+                                     matnormsbeta<-methyLImps(t(matnormsbeta), min = 0, max = 1, max.sv = NULL, col.list = NULL)
+                                     matnormsbeta<-t(matnormsbeta)
+                                     }
+                                     if(imputation_method=="imputePCA")
+                                     {cat("   Performing imputePCA")
+                                     
+                                     imputePCAs<-imputePCA$imputePCA
+                                     FactoMineR.svd.triplet<-imputePCA$FactoMineR.svd.triplet
+                                     
+                                     matnormsbeta <- imputePCAs(matnormsbeta)
+                                     matnormsbeta <- matnormsbeta$completeObs
+
+                                     matnormsbeta[matnormsbeta<0] <- 0
+                                     matnormsbeta[matnormsbeta>1] <- 1                                     
+                                     
+                                     matnormsM <- imputePCAs(matnormsM)
+                                     matnormsM <- matnormsM$completeObs
+                                    
+                                     }
+                                     
+                                 }
+                                                      
+
                             }
-                         library(impute)
-                         if (what!="both")
-                         {
-                             matnorms <- impute.knn(matnorms,k=5)$data 
-                         }
-                         else
-                         {
-                             matnormsM <- impute.knn(matnormsM,k=5)$data
-                             matnormsbeta <- impute.knn(matnormsbeta,k=5)$data
-                         }
-                         sink(type="message")
-                         sink()                       
-
-                   }
+                         
+                        
                 }
                          
                 
@@ -1717,9 +3131,9 @@ class PreProcessIDATs:
                 return(result)
             }
 
-
-            object<-reduce(GRset, RGset, what, cutp, cutsamples, cutcpgs, verbose, autoimpute)
-            pheno = pData(RGset)
+            R_MAX_MEM_SIZE=memory.limit(size = NA)
+            object<-reduce(GRset, RGset, what, cutp, cutsamples, cutcpgs, verbose, autoimpute,methyLImp, imputePCA, imputation_method, beadCutoff)
+            pheno = pData(GRset)
             if (what!="both")
             {
                 keep <- match(colnames(object$matr), rownames(pheno))
@@ -1737,25 +3151,31 @@ class PreProcessIDATs:
             return (result) 
 
 
-     }""")(GRset, RGset, what, cutp, cutsamples, cutcpgs, verbose, autoimpute)
+     }""")(GRset, RGset, what, detPcut, SampleCutoff, ProbeCutoff, verbose, autoimpute, methyLImp, imputePCA, imputation_method, beadCutoff)
         
+        
+        try:
+            self.pheno_py=self.ri2py_dataframe(self.pheno, matrix=True)
+        except:
+            self.pheno_py=self.ri2py_dataframe(self.pheno, matrix=False)  
         
         if (what=="both"):
             self.mval=obj[0]
             self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
             self.beta=obj[1]
-            self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)
-            return self.beta_py, self.mval_py
+            self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)                      
+            
+            return self.beta_py, self.mval_py, self.pheno_py
         
         elif(what=="M"):   
             self.mval=obj
             self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
-            return self.mval_py
+            return self.mval_py, self.pheno_py
         
         elif(what=="beta"):   
             self.beta=obj
             self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)  
-            return self.mval_py      
+            return self.beta_py, self.pheno_py      
     
         
     
@@ -2352,7 +3772,7 @@ class PreProcessIDATs:
     def ensure_ordering(self, cutoff=0.05):
         # ensure probes are in the same order in the mSetSq and detP objects
         # remove any probes that have failed in one or more samples
-        self.detectionP(RGset=self.RGset)
+        detP,_=self.detectionP(RGset=self.RGset)
         self.GRset, self.detP, self.RGset = robjects.r("""function (grset, detP, cutoff, pheno, rgSet) {        
              detP <- detP[match(featureNames(grset),rownames(detP)),]
              keep <- rowSums(detP < cutoff) == ncol(grset) 
@@ -2360,7 +3780,7 @@ class PreProcessIDATs:
              grsetFlt <- grset[keep,]              
              result = list(grsetFlt, detP, rgSet)
              return(result)
-            }""")(self.GRset, self.detP, cutoff, self.pheno, self.RGset)
+            }""")(self.GRset, detP, cutoff, self.pheno, self.RGset)
         return self.GRset
     
     def convert_sets(self,mset=True, rset=True):
