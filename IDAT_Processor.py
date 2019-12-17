@@ -593,6 +593,31 @@ class PreProcessIDATs:
         if thresh is not None:
             ax.vlines(x=thresh, ymin=vymin, ymax=thresh, ls='--')
             ax.hlines(y=thresh, xmin=hymin, xmax=thresh, ls='--') 
+            
+            
+    def plt_failedbeads(self,RGset=None, percent=True):
+        
+        if RGset is None:
+            RGset=self.RGset        
+        _,nbeads_df=self.beadCount(RGset=RGset)
+        if percent:
+            failure_df=nbeads_df.isnull().sum()/len(nbeads_df)*100
+        else:
+            failure_df=nbeads_df.isnull().sum()
+            
+        fig, ax = plt.subplots(figsize=(40,4))
+        
+        ax = sns.barplot(x=failure_df.index.to_numpy(), y=np.array(failure_df))
+        
+        if percent:
+            ax.set_title('Percentage of beadcounts below 3 per sample') 
+        else:
+            ax.set_title('Number of beadcounts below 3 per sample') 
+            
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right') 
+        plt.rc('xtick', labelsize=6)
+        plt.tight_layout()
+        plt.show()
         
     def plt_meandetP(self, detPcut=0.01, SampleCutoff=0.1, log_scale=True, plot='all' ):
         #self=preproidat
@@ -653,8 +678,8 @@ class PreProcessIDATs:
         
         if plot== 'all' and len(pandas2ri.ri2py(detP))==2:             
             
-            fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1) 
-            fig.subplots_adjust=0.85
+            fig, (ax1, ax2) = plt.subplots(figsize=(40,4),nrows=2, ncols=1) 
+            #fig.subplots_adjust=0.85
             ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
             ax2 = sns.barplot(x=detP_keep_py.columns, y=detP_keep_py.mean(axis=0).to_numpy(), ax=ax2)
             
@@ -669,10 +694,10 @@ class PreProcessIDATs:
             ax1.set_title('All Samples')   
             ax2.set_title('Good Samples')   
             
-            ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
-            ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
-            
-            #plt.tight_layout()
+            ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right')
+            ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, horizontalalignment='right')
+            plt.rc('xtick', labelsize=6)
+            plt.tight_layout()
             plt.show()
             return 
         
@@ -681,25 +706,20 @@ class PreProcessIDATs:
         if plot== 'all' and len(pandas2ri.ri2py(detP))==1:  
                
             
-            fig, (ax1) = plt.subplots(nrows=1, ncols=1)    
-            fig.subplots_adjust=0.85
-            ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
-            
+            fig, (ax1) = plt.subplots(figsize=(40,4),nrows=1, ncols=1)    
+            #fig.subplots_adjust=0.85
+            ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)            
             
             if log_scale:
-                ax1.set_yscale('log')
-                
-               
+                ax1.set_yscale('log')               
             
             ax1.axhline(detPcut, ls='--')
             
-            ax1.set_title('All Samples')   
-             
-            
-            ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
-            
-            
-            #plt.tight_layout()
+            ax1.set_title('All Samples')  
+                         
+            ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right')            
+            plt.rc('xtick', labelsize=6)
+            plt.tight_layout()
             plt.show()
             return 
         
@@ -711,15 +731,16 @@ class PreProcessIDATs:
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
                 dataframe=dataframe.transpose()  
-            fig, ax = plt.subplots()
-            fig.subplots_adjust=0.85
+            fig, ax = plt.subplots(figsize=(40,4))
+            #fig.subplots_adjust=0.85
             ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
             if log_scale:
                 ax.set_yscale('log')
             ax.axhline(detPcut, ls='--')    
             ax.set_title('All Samples') 
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')          
-            #plt.tight_layout()
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right') 
+            plt.rc('xtick', labelsize=6)
+            plt.tight_layout()
             plt.show()  
             return
             
@@ -729,15 +750,16 @@ class PreProcessIDATs:
             if len(dataframe)<=len(dataframe.columns):
                 print('Dataframe needed to be transposed')
                 dataframe=dataframe.transpose()  
-            fig, ax = plt.subplots()    
-            fig.subplots_adjust=0.85
+            fig, ax = plt.subplots(figsize=(40,10))    
+            #fig.subplots_adjust=0.85
             ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
             if log_scale:
                 ax.set_yscale('log')
             ax.axhline(detPcut, ls='--')    
             ax.set_title('Good Samples')
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize='small')
-            #plt.tight_layout()
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right')
+            plt.rc('xtick', labelsize=6)
+            plt.tight_layout()
             plt.show()   
             return
         
@@ -1018,7 +1040,7 @@ class PreProcessIDATs:
         return GRset, pheno
     
     
-    def remove_badsamples(self, badSampleCutoff=10, rm_badsamples=False, detPFilter=True, detPcut=0.01, SampleCutoff=0.1, addQC=False, verbose=True, RGset=None):
+    def remove_badsamples(self, badSampleCutoff=10, rm_badsamples=True, detPFilter=False, detPcut=0.01, SampleCutoff=0.1, addQC=False, verbose=True, RGset=None):
         ''' 
         excluding samples if avarage of unmeth and meth values is below 10
         and if detectionP probe wise threshold is below 0,01(detPcut) 
@@ -1443,7 +1465,7 @@ class PreProcessIDATs:
         
         
     
-    def DNAmArray_processing(self, GRset=None, RGset=None, filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, dropSnPs=True, cutbead=3, zeropoint=True, what="both", ProbeCutoff=0, array_type='EPIC', badSampleCutoff=10, rm_badsamples=True, detPFilter=False, detPcut=0.05, SampleCutoff=0.1, addQC=False, verbose=True, autoimpute=True, imputation_method="imputePCA", beadCutoff=0.05):
+    def DNAmArray_processing(self, GRset=None, RGset=None, filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, dropSnPs=True, cutbead=3, zeropoint=True, what="both", ProbeCutoff=0.1, SampleCutoff=0.1, array_type='EPIC', badSampleCutoff=10, rm_badsamples=True, rm_badprobes=False, detPFilter=False, detPcut=0.01, addQC=False, verbose=True, autoimpute=True, imputation_method="imputePCA"):
         
         
                
@@ -1461,21 +1483,17 @@ class PreProcessIDATs:
             imputation_method="imputePCA"   
             
         if verbose:
-            print('\nNow performing badsample removal')
+            print('\n Now performing badsample removal')
         RGset, pheno = self.remove_badsamples(badSampleCutoff=badSampleCutoff, rm_badsamples=rm_badsamples, detPFilter=detPFilter, detPcut=detPcut, SampleCutoff=SampleCutoff, addQC=addQC, verbose=verbose, RGset=RGset)
         
         if verbose:
             print('\n Now performing probefiltering on beadcount')
         RGset_filt, pheno = self.probeFiltering(cutbead=cutbead, RGset=RGset,zeropoint=zeropoint, verbose=verbose) 
         
-        if verbose:
-                print('\nNow removing more bad probes ')  
-        detP, _ = self.detectionP(RGset=RGset)        
-        GRset, pheno=self.remove_badprobes(obj=GRset, RGset=RGset, detP=detP, ProbeCutoff=ProbeCutoff,SampleCutoff=SampleCutoff, detPcut=detPcut, verbose=True)    
-                
+                        
         if filterNoCG and excludeXreactiveprobes and dropSnPs and filterXY is not False: 
             if verbose:
-                print('\nNow removing more probes ')
+                print('\n Now removing specific probes ')
             GRset, pheno=self.filterCpGs(obj=GRset if GRset else RGset , 
                                 dropSnPs=dropSnPs, 
                                 GRset=True if GRset else False, 
@@ -1485,11 +1503,16 @@ class PreProcessIDATs:
                                 array_type=array_type, 
                                 verbose=verbose)
         
+        if rm_badprobes:
+            if verbose:
+                    print('\n Now removing bad probes ')  
+            detP, _ = self.detectionP(RGset=RGset)        
+            GRset, pheno=self.remove_badprobes(obj=GRset, RGset=RGset, detP=detP, ProbeCutoff=ProbeCutoff,SampleCutoff=SampleCutoff, detPcut=detPcut, verbose=True)          
         
         if verbose:
-                print('\nNow performing reduce function')  
+                print('\n Now performing reduce function')  
         if what=='M':            
-            self.mval_py, self.pheno_py=self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose,autoimpute=autoimpute, imputation_method=imputation_method, beadCutoff=beadCutoff)
+            self.mval_py, self.pheno_py=self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose,autoimpute=autoimpute, imputation_method=imputation_method)
             
             #self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
             
@@ -1498,18 +1521,18 @@ class PreProcessIDATs:
         
         if what=='beta':    
             
-            self.beta, self.pheno_py=self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose, autoimpute=autoimpute, imputation_method=imputation_method, beadCutoff=beadCutoff)
+            self.beta, self.pheno_py=self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose, autoimpute=autoimpute, imputation_method=imputation_method)
             
             #self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)        
             return self.beta_py,self.pheno_py
         
         if what=='both':            
-            self.beta_py, self.mval_py, self.pheno_py =self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose,autoimpute=autoimpute, imputation_method=imputation_method, beadCutoff=beadCutoff) 
+            self.beta_py, self.mval_py, self.pheno_py =self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose,autoimpute=autoimpute, imputation_method=imputation_method) 
             
                 
             #self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)    
             #self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)        
-            return self.mval_py,self.beta_py, self.pheno_py
+            return self.beta_py, self.mval_py, self.pheno_py
               
         
        
@@ -2539,8 +2562,6 @@ class PreProcessIDATs:
                                                  warning = w.handler),
                      warning = W)
             }
-
-
                if (is.null(row.w)) row.w <- rep(1/nrow(X), nrow(X))
                if (is.null(col.w)) col.w <- rep(1, ncol(X))
                ncp <- min(ncp,nrow(X)-1,ncol(X))
@@ -2592,12 +2613,10 @@ class PreProcessIDATs:
                 res <- list(vs = vs, U = U, V = V)
                 return(res)
             }
-
         
              
             
             imputePCA <- function (X, ncp = 2, scale=TRUE, method=c("Regularized","EM"),row.w=NULL,coeff.ridge=1,threshold = 1e-6,seed = NULL,nb.init=1,maxiter=1000,...){
-
         impute <- function (X, ncp = 4, scale=TRUE, method=NULL,threshold = 1e-6,seed = NULL,init=1,maxiter=1000,row.w=NULL,coeff.ridge=1,...){
             moy.p <- function(V, poids) {
                 res <- sum(V * poids,na.rm=TRUE)/sum(poids[!is.na(V)])
@@ -2605,7 +2624,6 @@ class PreProcessIDATs:
             ec <- function(V, poids) {
                 res <- sqrt(sum(V^2 * poids,na.rm=TRUE)/sum(poids[!is.na(V)]))
             }
-
            nb.iter <- 1
            old <- Inf
            objective <- 0
@@ -2621,7 +2639,6 @@ class PreProcessIDATs:
            if (init>1) Xhat[missing] <- rnorm(length(missing)) ## random initialization
            fittedX <- Xhat
            if (ncp==0) nb.iter=0
-
            while (nb.iter > 0) {
                Xhat[missing] <- fittedX[missing]
                if (scale) Xhat=t(t(Xhat)*et)
@@ -2630,7 +2647,6 @@ class PreProcessIDATs:
                Xhat <- t(t(Xhat)-mean.p)
                et <- apply(Xhat, 2, ec,row.w)
                if (scale) Xhat <- t(t(Xhat)/et)
-
                svd.res <- FactoMineR.svd.triplet(Xhat,row.w=row.w,ncp=ncp)
         #       sigma2 <- mean(svd.res$vs[-(1:ncp)]^2)
                sigma2  <- nrow(X)*ncol(X)/min(ncol(X),nrow(X)-1)* sum((svd.res$vs[-c(1:ncp)]^2)/((nrow(X)-1) * ncol(X) - (nrow(X)-1) * ncp - ncol(X) * ncp + ncp^2))
@@ -2661,13 +2677,11 @@ class PreProcessIDATs:
            completeObs[missing] <- Xhat[missing]
            if (scale) fittedX <- t(t(fittedX)*et)
            fittedX <- t(t(fittedX)+mean.p)
-
            result <- list()
            result$completeObs <- completeObs
            result$fittedX <- fittedX
            return(result) 
         }
-
         #### Main program
          method <- match.arg(method,c("Regularized","regularized","EM","em"),several.ok=T)[1]
          obj=Inf
@@ -2694,8 +2708,8 @@ class PreProcessIDATs:
         
         
         
-    def reduce(self, GRset=None, RGset=None, what="both", detPcut=0.01, SampleCutoff=0.1, ProbeCutoff=0, verbose=True, autoimpute=True, imputation_method="imputePCA", beadCutoff=0.05):
-        
+    def reduce(self, GRset=None, RGset=None, what="both", detPcut=0.01, SampleCutoff=0.1, ProbeCutoff=0.1, verbose=True, autoimpute=True, imputation_method="imputePCA"):
+       
         if GRset:
             GRset=GRset
         else:
@@ -2725,7 +2739,7 @@ class PreProcessIDATs:
             imputePCA=False
            
             
-        obj, self.pheno = robjects.r("""function (GRset, RGset, what=c("beta", "M","both"), cutp, cutsamples, cutcpgs, verbose, autoimpute, methyLImp, imputePCA, imputation_method,beadCutoff,...) { 
+        obj, self.pheno = robjects.r("""function (GRset, RGset, what=c("beta", "M","both"), cutp, cutsamples, cutcpgs, verbose, autoimpute, methyLImp, imputePCA, imputation_method,...) { 
 
             ##' Extract functional normalized data according to filter data
             ##'
@@ -2746,7 +2760,7 @@ class PreProcessIDATs:
             ##' @author mvaniterson
             ##' @export
             ##' @importFrom utils data
-            reduce <- function(GRset, RGset, what=c("beta", "M", "both"), cutp=0.01, cutsamples=0.1, cutcpgs=0, verbose=TRUE, autoimpute,methyLImp, imputePCA, imputation_method,beadCutoff, ...) {
+            reduce <- function(GRset, RGset, what=c("beta", "M", "both"), cutp=0.01, cutsamples=0.1, cutcpgs=0, verbose=TRUE, autoimpute,methyLImp, imputePCA, imputation_method, ...) {
 
                 what <- match.arg(what)
 
@@ -2762,7 +2776,7 @@ class PreProcessIDATs:
                 pvalmat <- detectionP(RGset)
                 idPvalmat <- pvalmat > cutp
                 idPvalmat[is.na(idPvalmat)] <- TRUE ##set those for which a detection P-value could not be calculate TRUE to be filtered out
-                ##pvalmat[idPvalmat] <- NA
+               
 
                 if(verbose)
                     cat("On average", round(100*sum(idPvalmat)/prod(dim(idPvalmat)), 2),"% of the CpGs (",nrow(idPvalmat),") have detection P-value above the threshold ",cutp, "\n")
@@ -2806,10 +2820,9 @@ class PreProcessIDATs:
                 if(verbose & what!="both")
                 {
                          cat("On average", round(100*sum(is.na(matfilt))/prod(dim(matfilt)), 2),"% of the probes (",nrow(matfilt),") were set to NA in the probe filtering step! \n")
-                    RemainProbe <- rowSums(is.na(matfilt)) < beadCutoff*(ncol(matfilt))
-                    matfilt<-matfilt[RemainProbe,]     
+                    
                     mid <- match(rownames(matfilt), rownames(matnorm))
-                   # keep <- ( rownames(Accessory$detP) %in% rownames(Objects[[1]]))
+                  
                     matnorm <- matnorm[mid,]
                     matnorm[is.na(matfilt)] <- NA
 
@@ -2824,40 +2837,40 @@ class PreProcessIDATs:
                     if(verbose)
                         cat("Calculate failure/success rates and reduce... \n")                    
                     
+                    srRows<-rowSums(is.na(matnorm))/ncol(matnorm)
                     
-                    ##srCols <- apply(matnorm, 2, function(x) sum(is.na(x))/(length(x) - 30969)) ##chen CpGs excluded
-                    frCols <- apply(matnorm, 2, function(x) sum(is.na(x))/(length(x)))                    
-                    srRows <- apply(matnorm, 1, function(x) sum(!is.na(x))/length(x))
-                    ##rowSums(Accessory$detP > detPcut) <= ProbeCutoff * length(RemainSample)
+                    srCols<-colSums(is.na(matnorm))/nrow(matnorm)
+                    
+                    #srCols <- apply(matnorm, 2, function(x) sum(is.na(x))/(length(x)))                    
+                    #srRows <- apply(matnorm, 1, function(x) sum(is.na(x))/length(x))
+                    
 
                     if(verbose){
-                        cat("Percentage of samples having failure rate below", cutsamples, "is", round(100*sum(frCols < cutsamples)/length(frCols),2),"% \n")
-                        cat("Samples having failure rate above", cutsamples, paste(colnames(matnorm[,frCols > cutsamples]),collapse=",")," and will be deleted. ")                        
+                        cat("Percentage of samples having failure rates below", cutsamples, "is", round(100*sum(srCols < cutsamples)/length(srCols),2),"% \n")
+                        cat("Samples having failure rates above", cutsamples, paste(colnames(matnorm[,srCols > cutsamples]),collapse=",")," and will be deleted. ")                        
                         
                         
-                        cat("Percentage of CpGs having succes rate above", cutcpgs, "is", round(100*sum(srRows > cutcpgs)/length(srRows),2),"% \n")
+                        cat("Percentage of CpGs having failure rates below", cutcpgs, "is", round(100*sum(srRows < cutcpgs)/length(srRows),2),"% \n")
                         
                         
                         
                     }
                     
-                    matnorms<-matnorm[srRows > cutcpgs,  frCols < cutsamples]
+                    matnorms<-matnorm[srRows < cutcpgs,  srCols < cutsamples]
                 }
                 
                 if(verbose & what=="both")
                 {    
-                    RemainProbe <- rowSums(is.na(matfiltbeta)) < beadCutoff*(ncol(matfiltbeta))
-                    matfiltbeta<-matfiltbeta[RemainProbe,] 
+                   
                       cat("On average", round(100*sum(is.na(matfiltbeta))/prod(dim(matfiltbeta)), 2),"% of the beta probes (",nrow(matfiltbeta),") were set to NA in the probe filtering step! \n")
                      
                     mid <- match(rownames(matfiltbeta), rownames(matnormbeta))
                     matnormbeta <- matnormbeta[mid,]
                     matnormbeta[is.na(matfiltbeta)] <- NA
-                    
-                    
-                    RemainProbe <- rowSums(is.na(matfiltM)) < beadCutoff*(ncol(matfiltM))
-                    matfiltM<-matfiltM[RemainProbe,] 
+                                        
+                   
                     cat("On average", round(100*sum(is.na(matfiltM))/prod(dim(matfiltM)), 2),"% of the M probes (",nrow(matfiltM),") were set to NA in the probe filtering step! \n")
+                    
                     mid <- match(rownames(matfiltM), rownames(matnormM))
                     matnormM <- matnormM[mid,]
                     matnormM[is.na(matfiltM)] <- NA
@@ -2879,23 +2892,29 @@ class PreProcessIDATs:
                     if(verbose)
                          cat("Calculate failure/success rates and reduce... \n")
 
-                    frColsbeta <- apply(matnormbeta, 2, function(x) sum(is.na(x))/(length(x)))
-                    srRowsbeta <- apply(matnormbeta, 1, function(x) sum(!is.na(x))/length(x))
+                    #srColsbeta <- apply(matnormbeta, 2, function(x) sum(is.na(x))/(length(x)))
+                    srColsbeta<-colSums(is.na(matnormbeta))/nrow(matnormbeta)
+                    #srRowsbeta <- apply(matnormbeta, 1, function(x) sum(is.na(x))/length(x))
+                    srRowsbeta<-rowSums(is.na(matnormbeta))/ncol(matnormbeta)
                     
-                    frColsM <- apply(matnormM, 2, function(x) sum(is.na(x))/(length(x)))
-                    srRowsM <- apply(matnormM, 1, function(x) sum(!is.na(x))/length(x))
+                    
+                                        
+                    #srColsM <- apply(matnormM, 2, function(x) sum(is.na(x))/(length(x)))
+                    srColsM<-colSums(is.na(matnormM))/nrow(matnormM)
+                    #srRowsM <- apply(matnormM, 1, function(x) sum(is.na(x))/length(x))
+                    srRowsM<-rowSums(is.na(matnormM))/ncol(matnormM)
 
                     if(verbose){
-                        cat("Percentage of beta samples having failure rate below", cutsamples, "is", round(100*sum(frColsbeta < cutsamples)/length(frColsbeta),2),"% \n")
-                        cat("Percentage of M samples having failure rate below", cutsamples, "is", round(100*sum(frColsM < cutsamples)/length(frColsM),2),"% \n")
-                        cat("Percentage of beta CpGs having success rates above", cutcpgs, "is", round(100*sum(srRowsbeta > cutcpgs)/length(srRowsbeta),2),"% \n")
-                        cat("Percentage of M CpGs having success rates above", cutcpgs, "is", round(100*sum(srRowsM > cutcpgs)/length(srRowsM),2),"% \n")
+                        cat("Percentage of beta samples having failure rates below", cutsamples, "is", round(100*sum(srColsbeta < cutsamples)/length(srColsbeta),2),"% \n")
+                        cat("Percentage of M samples having failure rates below", cutsamples, "is", round(100*sum(srColsM < cutsamples)/length(srColsM),2),"% \n")
+                        cat("Percentage of beta CpGs having failure rates below", cutcpgs, "is", round(100*sum(srRowsbeta < cutcpgs)/length(srRowsbeta),2),"% \n")
+                        cat("Percentage of M CpGs having failure rates below", cutcpgs, "is", round(100*sum(srRowsM < cutcpgs)/length(srRowsM),2),"% \n")
                         
-                        cat("Samples having failure rate above", cutsamples, paste(colnames(matnormM[,frColsM > cutsamples]),collapse=",")," and will be deleted. ")                        
+                        cat("Samples having failure rates above", cutsamples, paste(colnames(matnormM[,srColsM > cutsamples]),collapse=",")," and will be deleted. ")                        
                         
                     }
-                    matnormsbeta<-matnormbeta[srRowsbeta > cutcpgs,  frColsbeta < cutsamples]
-                    matnormsM<-matnormM[srRowsM > cutcpgs,  frColsM < cutsamples]
+                    matnormsbeta<-matnormbeta[srRowsbeta < cutcpgs,  srColsbeta < cutsamples]
+                    matnormsM<-matnormM[srRowsM < cutcpgs,  srColsM < cutsamples]
                 }
                 
                 
@@ -2970,12 +2989,21 @@ class PreProcessIDATs:
                                          if  (what=="M")
                                          {                             
                                          matnorms <- imputePCAs(matnorms)
-                                         matnorms <- matnorms$completeObs
+
+                                             if(class(matnorms)!="matrix")
+                                             {
+                                             matnorms <- matnorms$completeObs
+                                             }
+                                         
                                          }
                                          else
                                          {
                                          matnorms <- imputePCAs(matnorms)
-                                         matnorms <- matnorms$completeObs
+                                         
+                                         if(class(matnorms)!="matrix")
+                                         {
+                                             matnorms <- matnorms$completeObs
+                                         }    
 
                                          matnorms[matnorms<0] <- 0
                                          matnorms[matnorms>1] <- 1  
@@ -3020,21 +3048,24 @@ class PreProcessIDATs:
                                      FactoMineR.svd.triplet<-imputePCA$FactoMineR.svd.triplet
                                      
                                      matnormsbeta <- imputePCAs(matnormsbeta)
-                                     matnormsbeta <- matnormsbeta$completeObs
-
+                                     
+                                     if(class(matnormsbeta)!="matrix")
+                                         {
+                                         matnormsbeta <- matnormsbeta$completeObs
+                                         }
                                      matnormsbeta[matnormsbeta<0] <- 0
                                      matnormsbeta[matnormsbeta>1] <- 1                                     
                                      
                                      matnormsM <- imputePCAs(matnormsM)
-                                     matnormsM <- matnormsM$completeObs
-                                    
+                                     if(class(matnormsM)!="matrix")
+                                         {
+                                         matnormsM <- matnormsM$completeObs
+                                         }
                                      }
                                      
-                                 }
-                                                      
+                                 }                                                      
 
-                            }
-                         
+                            }                         
                         
                 }
                          
@@ -3052,7 +3083,7 @@ class PreProcessIDATs:
             }
 
             R_MAX_MEM_SIZE=memory.limit(size = NA)
-            object<-reduce(GRset, RGset, what, cutp, cutsamples, cutcpgs, verbose, autoimpute,methyLImp, imputePCA, imputation_method, beadCutoff)
+            object<-reduce(GRset, RGset, what, cutp, cutsamples, cutcpgs, verbose, autoimpute,methyLImp, imputePCA, imputation_method)
             pheno = pData(GRset)
             if (what!="both")
             {
@@ -3071,7 +3102,7 @@ class PreProcessIDATs:
             return (result) 
 
 
-     }""")(GRset, RGset, what, detPcut, SampleCutoff, ProbeCutoff, verbose, autoimpute, methyLImp, imputePCA, imputation_method, beadCutoff)
+     }""")(GRset, RGset, what, detPcut, SampleCutoff, ProbeCutoff, verbose, autoimpute, methyLImp, imputePCA, imputation_method)
         
         
         try:
