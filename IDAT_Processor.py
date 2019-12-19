@@ -1465,7 +1465,7 @@ class PreProcessIDATs:
         
         
     
-    def DNAmArray_processing(self, GRset=None, RGset=None, filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, dropSnPs=True, cutbead=3, zeropoint=True, what="both", ProbeCutoff=0.1, SampleCutoff=0.1, array_type='EPIC', badSampleCutoff=10, rm_badsamples=True, rm_badprobes=False, detPFilter=False, detPcut=0.01, addQC=False, verbose=True, autoimpute=True, imputation_method="imputePCA"):
+    def DNAmArray_processing(self, GRset=None, RGset=None, filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, dropSnPs=True, mask_probes=True, cutbead=3, zeropoint=True, what="both", ProbeCutoff=0.05, SampleCutoff=0.05, array_type='EPIC', badSampleCutoff=10, rm_badsamples=False, rm_badprobes=False, detPFilter=False, detPcut=0.01, addQC=False, verbose=True, autoimpute=True, imputation_method="imputePCA"):
         
         
                
@@ -1481,28 +1481,16 @@ class PreProcessIDATs:
         if imputation_method!="methyLImp" and imputation_method!="imputePCA" and imputation_method!="knn":
             print('You did not specify a valid imputation method!!\n Choose "imputePCA" or "methyLImp" or "knn"...\n now using fallbackmethod "imputePCA"')
             imputation_method="imputePCA"   
-            
-        if verbose:
-            print('\n Now performing badsample removal')
-        RGset, pheno = self.remove_badsamples(badSampleCutoff=badSampleCutoff, rm_badsamples=rm_badsamples, detPFilter=detPFilter, detPcut=detPcut, SampleCutoff=SampleCutoff, addQC=addQC, verbose=verbose, RGset=RGset)
+        
+        if detPFilter or rm_badsamples:
+            if verbose:
+                print('\n Now performing badsample removal')
+            RGset, pheno = self.remove_badsamples(badSampleCutoff=badSampleCutoff, rm_badsamples=rm_badsamples, detPFilter=detPFilter, detPcut=detPcut, SampleCutoff=SampleCutoff, addQC=addQC, verbose=verbose, RGset=RGset)
         
         if verbose:
             print('\n Now performing probefiltering on beadcount')
         RGset_filt, pheno = self.probeFiltering(cutbead=cutbead, RGset=RGset,zeropoint=zeropoint, verbose=verbose) 
-        
-                        
-        if filterNoCG and excludeXreactiveprobes and dropSnPs and filterXY is not False: 
-            if verbose:
-                print('\n Now removing specific probes ')
-            GRset, pheno=self.filterCpGs(obj=GRset if GRset else RGset , 
-                                dropSnPs=dropSnPs, 
-                                GRset=True if GRset else False, 
-                                filterXY=filterXY, 
-                                filterNoCG=filterNoCG, 
-                                excludeXreactiveprobes=excludeXreactiveprobes, 
-                                array_type=array_type, 
-                                verbose=verbose)
-        
+                 
         if rm_badprobes:
             if verbose:
                     print('\n Now removing bad probes ')  
@@ -1511,45 +1499,193 @@ class PreProcessIDATs:
         
         if verbose:
                 print('\n Now performing reduce function')  
+                
         if what=='M':            
             self.mval_py, self.pheno_py=self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose,autoimpute=autoimpute, imputation_method=imputation_method)
             
-            #self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
+            if filterNoCG or excludeXreactiveprobes or dropSnPs or filterXY or mask_probes is not False: 
+                if verbose:
+                    print('\n Now removing specific probes ')
+                self.mval, self.pheno=self.filterCpGs(obj=self.mval , 
+                                    GRset=GRset if GRset else None,         
+                                    dropSnPs=dropSnPs,                                     
+                                    filterXY=filterXY, 
+                                    filterNoCG=filterNoCG, 
+                                    excludeXreactiveprobes=excludeXreactiveprobes,
+                                    mask_probes=mask_probes,                   
+                                    array_type=array_type, 
+                                    verbose=verbose)
             
+            
+                try:
+                    self.pheno_py=self.ri2py_dataframe(self.pheno, matrix=True)
+                except:
+                    self.pheno_py=self.ri2py_dataframe(self.pheno, matrix=False)  
+        
+        
+                #self.mval=obj[0]
+                self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
+                #self.beta=obj[1]
+                #self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)     
+
             
             return self.mval_py,self.pheno_py
+        
+        
+        
+        
         
         if what=='beta':    
             
             self.beta, self.pheno_py=self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose, autoimpute=autoimpute, imputation_method=imputation_method)
             
-            #self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)        
+            if filterNoCG or excludeXreactiveprobes or dropSnPs or filterXY or mask_probes is not False: 
+                if verbose:
+                    print('\n Now removing specific probes ')
+                self.beta, self.pheno=self.filterCpGs(obj=self.beta , 
+                                    GRset=GRset if GRset else None,         
+                                    dropSnPs=dropSnPs,                                     
+                                    filterXY=filterXY, 
+                                    filterNoCG=filterNoCG, 
+                                    excludeXreactiveprobes=excludeXreactiveprobes, 
+                                    mask_probes=mask_probes,                  
+                                    array_type=array_type, 
+                                    verbose=verbose)
+            
+            
+                try:
+                    self.pheno_py=self.ri2py_dataframe(self.pheno, matrix=True)
+                except:
+                    self.pheno_py=self.ri2py_dataframe(self.pheno, matrix=False)  
+        
+        
+                #self.mval=obj[0]
+                self.beta_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
+                #self.beta=obj[1]
+                #self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)    
+            
+            
             return self.beta_py,self.pheno_py
         
         if what=='both':            
             self.beta_py, self.mval_py, self.pheno_py =self.reduce(GRset=GRset, RGset=RGset_filt, what=what, detPcut=detPcut, SampleCutoff=SampleCutoff, ProbeCutoff=ProbeCutoff, verbose=verbose,autoimpute=autoimpute, imputation_method=imputation_method) 
             
                 
-            #self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)    
-            #self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)        
+            if filterNoCG or excludeXreactiveprobes or dropSnPs or filterXY or mask_probes is not False: 
+                if verbose:
+                    print('\n Now removing specific probes for m-values')
+                self.mval, self.pheno=self.filterCpGs(obj=self.mval , 
+                                    GRset=GRset if GRset else None,         
+                                    dropSnPs=dropSnPs,                                     
+                                    filterXY=filterXY, 
+                                    filterNoCG=filterNoCG, 
+                                    excludeXreactiveprobes=excludeXreactiveprobes,
+                                    mask_probes=mask_probes,                   
+                                    array_type=array_type, 
+                                    verbose=verbose)
+            
+            
+                try:
+                    self.pheno_py=self.ri2py_dataframe(self.pheno, matrix=True)
+                except:
+                    self.pheno_py=self.ri2py_dataframe(self.pheno, matrix=False)        
+                #self.mval=obj[0]
+                self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
+                if verbose:
+                    print('\n Now removing specific probes for beta-values ')
+                self.beta, _ =self.filterCpGs(obj=self.beta , 
+                                    GRset=GRset if GRset else None,         
+                                    dropSnPs=dropSnPs,                                     
+                                    filterXY=filterXY, 
+                                    filterNoCG=filterNoCG, 
+                                    excludeXreactiveprobes=excludeXreactiveprobes,
+                                    mask_probes=mask_probes,           
+                                    array_type=array_type, 
+                                    verbose=verbose)
+                
+                
+                
+                #self.beta=obj[1]
+                self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)    
             return self.beta_py, self.mval_py, self.pheno_py
               
         
-       
+    def mask_probes(self, obj, path=None):
+
+        if path is None:
+            path="/home/Deep_Learner/private/network/Methyl_Array/Katja_850K/EPIC.hg19.manifest.tsv.gz"
+
+        probelist=robjects.r("""function(path){                                      
+
+            xReactiveProbes <- read.csv(path,
+              sep="\t", header=T, stringsAsFactors=FALSE)  
+
+            return(xReactiveProbes)
+
+            }""")(path)
+
+        probe_df=self.ri2py_dataframe(probelist, matrix=True)
+        probe_pyarray=probe_df['probeID'][probe_df['MASK_general']==True].to_numpy()
+        probe_rarray=numpy2ri.py2ri(probe_pyarray)
+
+        obj=robjects.r("""function(obj, array){
+
+            keep <- !(rownames(obj) %in% array)
+            objkeep <- obj[keep,]
+
+            #cat(nrow(obj))
+            #cat(nrow(objkeep))
+
+            return(objkeep)
+
+            }""")(obj,probe_rarray)   
+        
+        return obj
         
         
-    def dropLociWithSnps(self, GRset=None, obj=None):
+    def dropLociWithSnps(self,GRset=None, obj=None):
         if GRset:
             GRset=GRset
         else:
             GRset=self.GRset
-        GRset = robjects.r("""function (grset) {             
+        if obj==None:
+            obj=False
+        result = robjects.r("""function (grset, obj) {             
              if(class(grset) != "GenomicRatioSet")
                     stop("The object should be of class 'GenomicRatioSet'!")
-             grsetFlt <- dropLociWithSnps(grset)             
-             return(grsetFlt)
-            }""")(GRset)
-        return GRset
+             #cat(obj)       
+             #print(nrow(grset))
+             
+             grsetFlt <- dropLociWithSnps(grset)
+             #print(nrow(grsetFlt))
+             if (obj != FALSE)
+             {
+             #cat('here')
+             snps<- grset[!(rownames(grset) %in% rownames(grsetFlt)),]
+             #print(head(snps, 100))
+             objflt<-obj[!(rownames(obj) %in% rownames(snps)),]     
+             #print(nrow(obj))
+             #print(nrow(objflt))
+             result=list(grsetFlt, objflt)
+             }
+             else
+             {
+             result=list(grsetFlt)
+             }
+             
+             return(result)
+             
+            }""")(GRset, obj)
+        
+       
+        if len(pandas2ri.ri2py(result))>1:
+            #ri2py_dataframe(result[0], matrix=False)
+            GRset=result[0]
+            obj=result[1]
+            return GRset, obj
+        else:
+            GRset=result[0]
+            return GRset, None
     
     def filterXY(self, obj=None):
         # if your data includes males and females, remove probes on the sex chromosomes 
@@ -1605,9 +1741,10 @@ class PreProcessIDATs:
         return obj  
     
     
-    def filterCpGs(self, obj=None, dropSnPs=True, GRset=True, filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, array_type='EPIC', verbose=True):
+    def filterCpGs(self, obj=None, GRset=None, dropSnPs=True, filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, mask_probes=True, array_type='EPIC', verbose=True):
         orig_obj=obj        
-        
+        if GRset is None:
+            GRset=self.GRset
         rgset = robjects.r("""function (obj) {             
              if(class(obj) == "RGChannelSet" | class(obj) == "RGChannelSetExtended"  ){                    
                     return(TRUE)  
@@ -1618,20 +1755,20 @@ class PreProcessIDATs:
             }""")(obj) 
 
         if pandas2ri.ri2py(rgset):
-            print('Sorry this does not work with RGChannelSets, please use "GenomicRatioSet", "MethySets" or "RatioSets"! ')
+            print('Sorry this does not work with RGChannelSets, please use "GenomicRatioSet", "MethySets" , "RatioSets", "Mvals" or "betas"! ')
             return obj                 
         
-        
+                
         if excludeXreactiveprobes:
             if verbose:
                 print('Dropping cross- reactive probes')
-            obj=self.excludeXreactiveprobes(obj,array_type=array_type)      
+            obj = self.excludeXreactiveprobes(obj, array_type=array_type)      
         if filterXY:
             if verbose:
                 print('Dropping XY-Chromosome-related probes')
-            obj=self.filterXY(obj)    
+            obj = self.filterXY(obj)    
         if filterNoCG:            
-            obj=self.filterNoCG(obj=obj, verbose=verbose) 
+            obj = self.filterNoCG(obj=obj, verbose=verbose) 
             
         grset = robjects.r("""function (obj) {             
             if(class(obj) == "GenomicRatioSet")
@@ -1640,12 +1777,17 @@ class PreProcessIDATs:
             }""")(obj)   
         
         if dropSnPs and not pandas2ri.ri2py(grset):
+            _,obj=self.dropLociWithSnps(GRset=GRset, obj=obj)
+            
+            
+        elif dropSnPs and pandas2ri.ri2py(grset):
+            obj,_=self.dropLociWithSnps(GRset=obj)
+            #self.GRset=obj           
+        
+        if mask_probes:
             if verbose:
-                print('sorry can not remove snps object need to be of type "GenomicRatioSet"...\n processing without performing snp removal')             
-        if dropSnPs and pandas2ri.ri2py(grset):
-            obj=self.dropLociWithSnps(GRset=obj)
-            #self.GRset=obj                               
-                   
+                print('\n Now performing mask_probes function')                    
+            obj = self.mask_probes(obj, path=None)
         
         mset = robjects.r("""function (obj) {             
              if(class(obj) == "MethylSet")
@@ -1670,19 +1812,42 @@ class PreProcessIDATs:
              else return(FALSE)
             }""")(obj)      
         #if pandas2ri.ri2py(gmset):   
-                 # self.GMset=obj           
-        pheno=robjects.r("pData")(obj)
+                 # self.GMset=obj 
+        if pandas2ri.ri2py(gmset) or pandas2ri.ri2py(rset) or pandas2ri.ri2py(mset) or pandas2ri.ri2py(grset):
+            pheno=robjects.r("pData")(obj)
+        
+        else:
+            
+            pheno, GRset = robjects.r("""function (obj, GRset) {                   
+                  
+                  GRset <- GRset[,colnames(GRset) %in% colnames(obj)]
+                  pheno=pData(GRset)
+                  result=list(pheno,GRset)
+                  return(result)
+
+                }""")(obj, GRset) 
+            
             
         if verbose:    
             robjects.r("""function (obj, orig_obj) { 
                 start = length(rownames(orig_obj))
                 left = length(rownames(obj))
+                
+                startcol = length(colnames(orig_obj))
+                leftcol = length(colnames(obj))
 
                 cat("\n In total there were ",start," probes for the analysis before filtering.")
 
                 cat("\n",start-left," probes have been removed from further analysis.")
 
-                cat("\n In total there are",left," probes left for the analysis.")    
+                cat("\n In total there are",left," probes left for the analysis.")
+                
+                
+                cat("\n In total there were ",startcol," samples for the analysis before filtering.")
+
+                cat("\n",startcol-leftcol," samples have been removed from further analysis.")
+
+                cat("\n In total there are",leftcol," samples left for the analysis.")   
 
                 }""")(obj, orig_obj)            
         
@@ -2706,7 +2871,48 @@ class PreProcessIDATs:
         
         return imputePCA
         
+    def detectionP_NA(self):
         
+        detectionP=robjects.r("""function(){
+        library(matrixStats)
+        detectionP <- function(rgSet, type = "m+u", na.rm=FALSE) {
+            
+            locusNames <- getManifestInfo(rgSet, "locusNames")
+            detP <- matrix(NA_real_, ncol = ncol(rgSet), nrow = length(locusNames),
+                           dimnames = list(locusNames, sampleNames(rgSet)))
+
+            controlIdx <- getControlAddress(rgSet, controlType = "NEGATIVE")
+            r <- getRed(rgSet)
+            rBg <- r[controlIdx,]
+            rMu <- matrixStats::colMedians(rBg, na.rm=na.rm)
+            rSd <- matrixStats::colMads(rBg, na.rm=na.rm)
+
+            g <- getGreen(rgSet)
+            gBg <- g[controlIdx,]
+            gMu <- matrixStats::colMedians(gBg, na.rm=na.rm)
+            gSd <- matrixStats::colMads(gBg, na.rm=na.rm)
+
+            TypeII <- getProbeInfo(rgSet, type = "II")
+            TypeI.Red <- getProbeInfo(rgSet, type = "I-Red")
+            TypeI.Green <- getProbeInfo(rgSet, type = "I-Green")
+            for (i in 1:ncol(rgSet)) {
+                ## Type I Red
+                intensity <- r[TypeI.Red$AddressA, i] + r[TypeI.Red$AddressB, i]
+                detP[TypeI.Red$Name, i] <- 1-pnorm(intensity, mean=rMu[i]*2, sd=rSd[i]*2)
+                ## Type I Green
+                intensity <- g[TypeI.Green$AddressA, i] + g[TypeI.Green$AddressB, i]
+                detP[TypeI.Green$Name, i] <- 1-pnorm(intensity, mean=gMu[i]*2, sd=gSd[i]*2)
+                ## Type II
+                intensity <- r[TypeII$AddressA, i] + g[TypeII$AddressA, i]
+                detP[TypeII$Name, i] <- 1-pnorm(intensity, mean=rMu[i]+gMu[i], sd=rSd[i]+gSd[i])
+            }
+            detP
+        }
+        return(detectionP)
+        
+        }""")()
+        
+        return detectionP
         
     def reduce(self, GRset=None, RGset=None, what="both", detPcut=0.01, SampleCutoff=0.1, ProbeCutoff=0.1, verbose=True, autoimpute=True, imputation_method="imputePCA"):
        
@@ -2738,8 +2944,9 @@ class PreProcessIDATs:
         if (imputation_method!="imputePCA"):
             imputePCA=False
            
-            
-        obj, self.pheno = robjects.r("""function (GRset, RGset, what=c("beta", "M","both"), cutp, cutsamples, cutcpgs, verbose, autoimpute, methyLImp, imputePCA, imputation_method,...) { 
+        detectionP=self.detectionP_NA()
+        
+        obj, self.pheno = robjects.r("""function (GRset, RGset, what=c("beta", "M","both"), cutp, cutsamples, cutcpgs, verbose, autoimpute, methyLImp, imputePCA, imputation_method,detectionPs,...) { 
 
             ##' Extract functional normalized data according to filter data
             ##'
@@ -2760,7 +2967,7 @@ class PreProcessIDATs:
             ##' @author mvaniterson
             ##' @export
             ##' @importFrom utils data
-            reduce <- function(GRset, RGset, what=c("beta", "M", "both"), cutp=0.01, cutsamples=0.1, cutcpgs=0, verbose=TRUE, autoimpute,methyLImp, imputePCA, imputation_method, ...) {
+            reduce <- function(GRset, RGset, what=c("beta", "M", "both"), cutp=0.01, cutsamples=0.1, cutcpgs=0, verbose=TRUE, autoimpute,methyLImp, imputePCA, imputation_method,detectionPs, ...) {
 
                 what <- match.arg(what)
 
@@ -2772,8 +2979,8 @@ class PreProcessIDATs:
                 ##Filter on detection P-value using minfi's detectionP
                 if(verbose)
                     cat("Calculate and filter on detection P-value... \n")
-
-                pvalmat <- detectionP(RGset)
+                
+                pvalmat <- detectionPs(RGset, na.rm=TRUE)
                 idPvalmat <- pvalmat > cutp
                 idPvalmat[is.na(idPvalmat)] <- TRUE ##set those for which a detection P-value could not be calculate TRUE to be filtered out
                
@@ -3083,7 +3290,7 @@ class PreProcessIDATs:
             }
 
             R_MAX_MEM_SIZE=memory.limit(size = NA)
-            object<-reduce(GRset, RGset, what, cutp, cutsamples, cutcpgs, verbose, autoimpute,methyLImp, imputePCA, imputation_method)
+            object<-reduce(GRset, RGset, what, cutp, cutsamples, cutcpgs, verbose, autoimpute,methyLImp, imputePCA, imputation_method, detectionPs)
             pheno = pData(GRset)
             if (what!="both")
             {
@@ -3102,7 +3309,7 @@ class PreProcessIDATs:
             return (result) 
 
 
-     }""")(GRset, RGset, what, detPcut, SampleCutoff, ProbeCutoff, verbose, autoimpute, methyLImp, imputePCA, imputation_method)
+     }""")(GRset, RGset, what, detPcut, SampleCutoff, ProbeCutoff, verbose, autoimpute, methyLImp, imputePCA, imputation_method, detectionP)
         
         
         try:
