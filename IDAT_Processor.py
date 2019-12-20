@@ -1349,7 +1349,7 @@ class PreProcessIDATs:
                 }""")(self.RGset, nPCs)
             self.insert_cell_types() 
             pheno=robjects.r("pData")(self.GRset)
-            return self.GRset,pheno
+            return self.GRset, pheno
 
 
     def preprocessQuantile(self,celltype_adoption=False, use_cell_count2=False, RGset=None):   
@@ -1372,7 +1372,7 @@ class PreProcessIDATs:
                     }""")(self.RGset)
             self.insert_cell_types()
             pheno=robjects.r("pData")(self.GRset)
-            return self.GRset , pheno   
+            return self.GRset, pheno   
 
 
     def est_cell_counts(self,RGset=None,**kwargs):
@@ -1495,7 +1495,20 @@ class PreProcessIDATs:
             if verbose:
                     print('\n Now removing bad probes ')  
             detP, _ = self.detectionP(RGset=RGset)        
-            GRset, pheno=self.remove_badprobes(obj=GRset, RGset=RGset, detP=detP, ProbeCutoff=ProbeCutoff,SampleCutoff=SampleCutoff, detPcut=detPcut, verbose=True)          
+            GRset, pheno=self.remove_badprobes(obj=GRset, RGset=RGset, detP=detP, ProbeCutoff=ProbeCutoff,SampleCutoff=SampleCutoff, detPcut=detPcut, verbose=True)      
+            
+            
+        if rm_badprobes or rm_badsamples:
+            if verbose:
+                    print('\n Aligning RGset and GRset ') 
+            GRset,self.pheno = robjects.r("""function (RGset, GRset) {  
+                      #colnames(GRset) %in% colnames(RGset)
+                      GRset <- GRset[,colnames(GRset) %in% colnames(RGset)]  
+                      pheno<-pData(GRset)
+                      result=list(GRset,pheno)
+                      return(result)
+             }""")(RGset_filt,GRset)  
+            
         
         if verbose:
                 print('\n Now performing reduce function')  
@@ -1964,7 +1977,7 @@ class PreProcessIDATs:
     def champ_processing(self, pheno=None, GRset=None, RGset=None, beta=None, M=None, 
                          autoimpute=True, filterDetP=True, ProbeCutoff=0, SampleCutoff=0.1,
                          filterBeads=True,beadCutoff=0.05,fixOutlier = True, dropSnPs=True, 
-                         filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, array_type='EPIC',                                  verbose=True, badSampleCutoff=10, rm_badsamples=True,detPFilter=False, detPcut=0.01, addQC=False, imputation_method="imputePCA"):
+                         filterXY=True, filterNoCG=True, excludeXreactiveprobes=True, mask_probes=True, array_type='EPIC',                                  verbose=True, badSampleCutoff=10, rm_badsamples=True, detPFilter=False, detPcut=0.01, addQC=False, imputation_method="imputePCA"):
         
         if imputation_method!="methyLImp" and imputation_method!="imputePCA" and imputation_method!="knn":
             print('You did not specify a valid imputation method!!\n Choose "imputePCA" or "methyLImp" or "knn"...\n now using fallbackmethod "imputePCA"')
@@ -1987,31 +2000,21 @@ class PreProcessIDATs:
                 GRset=None    
         else:
             GRset = GRset     
-        if verbose:
-            print('\nNow performing badsample removal')           
-        RGset, pheno = self.remove_badsamples(badSampleCutoff=badSampleCutoff, rm_badsamples=rm_badsamples, 
-                                          detPFilter=detPFilter, detPcut=detPcut, SampleCutoff=SampleCutoff,                                                                            addQC=addQC, verbose=verbose, RGset=RGset)
-        
-        
-        if filterNoCG and excludeXreactiveprobes and dropSnPs and filterXY is not False: 
+        if rm_badsamples: 
             if verbose:
-                print('\nNow removing more bad probes ')  
-            GRset, pheno=self.filterCpGs(obj=GRset if GRset else RGset , 
-                                dropSnPs=dropSnPs, 
-                                GRset=True if GRset else False, 
-                                filterXY=filterXY, 
-                                filterNoCG=filterNoCG, 
-                                excludeXreactiveprobes=excludeXreactiveprobes, 
-                                array_type=array_type, 
-                                verbose=verbose)
-        
-        GRset,pheno = robjects.r("""function (RGset, GRset) {  
-                      #colnames(GRset) %in% colnames(RGset)
-                      GRset <- GRset[,colnames(GRset) %in% colnames(RGset)]  
-                      pheno<-pData(GRset)
-                      result=list(GRset,pheno)
-                      return(result)
-             }""")(RGset,GRset)
+                print('\n Now performing badsample removal')           
+            RGset, pheno = self.remove_badsamples(badSampleCutoff=badSampleCutoff, rm_badsamples=rm_badsamples, 
+                                              detPFilter=detPFilter, detPcut=detPcut, SampleCutoff=SampleCutoff,                                                                            addQC=addQC, verbose=verbose, RGset=RGset) 
+            
+            if verbose:
+                print('\n Aligning RGset and GRset')
+            GRset,pheno = robjects.r("""function (RGset, GRset) {  
+                          #colnames(GRset) %in% colnames(RGset)
+                          GRset <- GRset[,colnames(GRset) %in% colnames(RGset)]  
+                          pheno<-pData(GRset)
+                          result=list(GRset,pheno)
+                          return(result)
+                 }""")(RGset,GRset)
         
             
         
@@ -2033,7 +2036,7 @@ class PreProcessIDATs:
         
         
         if verbose:
-            print('\nNow performing champ_filter function') 
+            print('\n Now performing champ_filter function') 
 
         self.beta_py, self.mval_py,self.pheno_py = self.champ_filter(
                                                                   beta=beta,
@@ -2051,6 +2054,50 @@ class PreProcessIDATs:
                                                                   fixOutlier = fixOutlier,
                                                                   imputation_method=imputation_method
                                                                  )
+        
+        GRset,self.pheno = robjects.r("""function (mval, GRset) {  
+                          #colnames(GRset) %in% colnames(RGset)
+                          GRset <- GRset[,colnames(GRset) %in% colnames(mval)]  
+                          pheno<-pData(GRset)
+                          result=list(GRset,pheno)
+                          return(result)
+                 }""")(self.mval,GRset)
+        
+        
+        if filterNoCG or excludeXreactiveprobes or dropSnPs or filterXY or mask_probes is not False: 
+                if verbose:
+                    print('\n Now removing specific probes for m-values')
+                self.mval, self.pheno=self.filterCpGs(obj=self.mval , 
+                                    GRset=GRset if GRset else None,         
+                                    dropSnPs=dropSnPs,                                     
+                                    filterXY=filterXY, 
+                                    filterNoCG=filterNoCG, 
+                                    excludeXreactiveprobes=excludeXreactiveprobes,
+                                    mask_probes=mask_probes,                   
+                                    array_type=array_type, 
+                                    verbose=verbose)
+                
+                try:
+                    self.pheno_py=self.ri2py_dataframe(self.pheno, matrix=True)
+                except:
+                    self.pheno_py=self.ri2py_dataframe(self.pheno, matrix=False)        
+                #self.mval=obj[0]
+                self.mval_py = self.ri2py_dataframe(r_dat=self.mval, matrix=False)
+                
+                if verbose:
+                    print('\n Now removing specific probes for beta-values ')
+                self.beta, _ =self.filterCpGs(obj=self.beta , 
+                                    GRset=GRset if GRset else None,         
+                                    dropSnPs=dropSnPs,                                     
+                                    filterXY=filterXY, 
+                                    filterNoCG=filterNoCG, 
+                                    excludeXreactiveprobes=excludeXreactiveprobes,
+                                    mask_probes=mask_probes,           
+                                    array_type=array_type, 
+                                    verbose=verbose)
+              
+                self.beta_py = self.ri2py_dataframe(r_dat=self.beta, matrix=False)           
+        
         
         
         
@@ -2264,23 +2311,7 @@ class PreProcessIDATs:
             
             
             ### Start Filtering Here
-            cat(" Section 2: Filtering Start >>")
-            
-            
-            if(FilterOption$filterBeads == TRUE)
-            {   
-                
-                cat("  Filtering BeadCount Start")
-                RemainProbe <- rowSums(is.na(Accessory$beadcount)) < beadCutoff*(ncol(Accessory$beadcount))
-                
-                cat("    Filtering probes with a beadcount <3 in at least ",beadCutoff*100,"% of samples.")
-                cat("    Removing ",sum(RemainProbe == FALSE)," probes")
-                
-                Objects <- lapply(Objects,function(x) x[RemainProbe,])
-                #Accessory <- lapply(Accessory,function(x) x[RemainProbe,])
-            }
-
-            
+            cat(" Section 2: Filtering Start >>")  
 
 
             if(FilterOption$filterDetP == TRUE)
@@ -2447,9 +2478,28 @@ class PreProcessIDATs:
                }
             }
              
-
-
-            
+           keep <- (rownames(Accessory$detP) %in% rownames(Objects[[1]]))
+           Accessory$detP <- Accessory$detP[keep,]  
+           keep <- (rownames(Accessory$beadcount) %in% rownames(Objects[[1]]))
+           Accessory$beadcount <- Accessory$beadcount[keep,]
+           
+           cat(nrow(Objects$M)) 
+           cat(nrow(Objects$beta) )
+           cat(nrow( Accessory$beadcount) )
+           cat(nrow( Accessory$detP) )
+           
+           if(FilterOption$filterBeads == TRUE)
+            {   
+                
+                cat("  Filtering BeadCount Start")
+                RemainProbe <- rowSums(is.na(Accessory$beadcount)) < beadCutoff*(ncol(Accessory$beadcount))
+                
+                cat("    Filtering probes with a beadcount <3 in at least ",beadCutoff*100,"% of samples.")
+                cat("    Removing ",sum(RemainProbe == FALSE)," probes")
+                
+                Objects <- lapply(Objects,function(x) x[RemainProbe,])
+                Accessory <- lapply(Accessory,function(x) x[RemainProbe,])
+            } 
 
             
             #rownames(Accessory$detP) %in% rownames(Objects[[1]]))
