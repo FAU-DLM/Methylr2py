@@ -2230,7 +2230,9 @@ class PreProcessIDATs:
 
 
 
-
+           
+           
+           
 
             ### Checking Detect P value
             if(FilterOption$filterDetP == TRUE)
@@ -2248,10 +2250,51 @@ class PreProcessIDATs:
                         
                         cat("    !!! Your detP matrix has been aligned to match the EXACT same rowname and colname as Data Matrix.")
                         
-                        keep <- ( rownames(Accessory$detP) %in% rownames(Objects[[1]]))
-                        Accessory$detP <- Accessory$detP[keep,]  
-                        keep <- (colnames(Accessory$detP) %in% colnames(Objects[[1]]))
-                        Accessory$detP <- Accessory$detP[,keep]
+                        #keep <-match(colnames(nbeads), colnames(m))
+                        
+                        if (nrow(Accessory$detP) > nrow(Objects[[1]]))
+                        {
+                        
+                            keep <- ( rownames(Accessory$detP) %in% rownames(Objects[[1]]))
+                            Accessory$detP <- Accessory$detP[keep,]                       
+                        }
+                        
+                        else if (nrow(Accessory$detP) < nrow(Objects[[1]]))
+                        {
+                        
+                            keep <- ( rownames(Objects[[1]]) %in% rownames(Accessory$detP))
+                            Accessory$detP <- Accessory$detP[keep,] 
+                        
+                        }
+                        
+                        else if (nrow(Accessory$detP) == nrow(Objects[[1]]))
+                        {
+                            keep <- match(rownames(Objects[[1]]), rownames(Accessory$detP))
+
+                            Accessory$detP <- Accessory$detP[keep,]
+                        
+                        }
+                        
+                        
+                        if (ncol(Accessory$detP) <= ncol(Objects[[1]]))
+                        {
+                        
+                            keep <- match( colnames(Accessory$detP), colnames(Objects[[1]]))
+                            Accessory$detP <- Accessory$detP[,keep]                       
+                        }
+                        
+                        else if (ncol(Accessory$detP) > ncol(Objects[[1]]))
+                        {
+                        
+                            keep <- match(colnames(Objects[[1]]), colnames(Accessory$detP))
+                            Accessory$detP <- Accessory$detP[,keep] 
+                        
+                        }
+                       
+                        
+                                         
+                        
+                        
                         
                     }  
                 } else {
@@ -2279,11 +2322,53 @@ class PreProcessIDATs:
                                                                        
                         cat("    !!! Your  beadcount matrix has been aligned to match the EXACT same rowname and colname as Data Matrix.")
                         
-                        keep <- (rownames(Accessory$beadcount) %in% rownames(Objects[[1]]))
-                        Accessory$beadcount <- Accessory$beadcount[keep,]                         
+                                 
                         
-                        keep <- (colnames(Accessory$beadcount) %in% colnames(Objects[[1]]))
-                        Accessory$beadcount <- Accessory$beadcount[,keep]
+                        if (nrow(Accessory$beadcount) > nrow(Objects[[1]]))
+                        {
+                        
+                            keep <- ( rownames(Accessory$beadcount) %in% rownames(Objects[[1]]))
+                            Accessory$beadcount <- Accessory$beadcount[keep,]                       
+                        }
+                        
+                        else if (nrow(Accessory$beadcount) < nrow(Objects[[1]]))
+                        {
+                        
+                            keep <- ( rownames(Objects[[1]]) %in% rownames(Accessory$beadcount))
+                            Accessory$beadcount <- Accessory$beadcount[keep,] 
+                        
+                        }
+                        
+                        else if (nrow(Accessory$beadcount) == nrow(Objects[[1]]))
+                        {
+                            keep <- match(rownames(Objects[[1]]), rownames(Accessory$beadcount))
+
+                            Accessory$beadcount <- Accessory$beadcount[keep,]
+                        
+                        }
+                        
+                        
+                        if (ncol(Accessory$beadcount) <= ncol(Objects[[1]]))
+                        {
+                        
+                            keep <- match( colnames(Accessory$beadcount), colnames(Objects[[1]]))
+                            Accessory$beadcount <- Accessory$beadcount[,keep]                       
+                        }
+                        
+                        else if (ncol(Accessory$beadcount) > ncol(Objects[[1]]))
+                        {
+                        
+                            keep <- match(colnames(Objects[[1]]), colnames(Accessory$beadcount))
+                            Accessory$beadcount <- Accessory$beadcount[,keep] 
+                        
+                        }
+                       
+                        
+                        
+                        
+                        
+                        
+                        
                     }  
                 } else {
                     cat("    !!! Parameter beadcount is not found, filterBeads is reset FALSE now.")
@@ -2309,6 +2394,10 @@ class PreProcessIDATs:
                 }
             }
             
+            #cat(nrow(Objects$M)) 
+            #cat(nrow(Objects$beta) )
+            #cat(nrow( Accessory$beadcount) )
+            #cat(nrow( Accessory$detP) )
             
             ### Start Filtering Here
             cat(" Section 2: Filtering Start >>")  
@@ -2415,8 +2504,11 @@ class PreProcessIDATs:
                                                                    
                                          
                                          Objects$beta <- imputePCAs(Objects$beta)
-                                         Objects$beta <- Objects$beta$completeObs
-
+                                         if(class(Objects$beta)!="matrix")
+                                         {
+                                             Objects$beta <- Objects$beta$completeObs
+                                         } 
+                                         
                                          Objects$beta[Objects$beta<0] <- 0
                                          Objects$beta[Objects$beta>1] <- 1  
                                          
@@ -2467,8 +2559,12 @@ class PreProcessIDATs:
                                                                    
                                          
                                          Objects$M <- imputePCAs(Objects$M)
-                                         Objects$M <- Objects$M$completeObs                                         
                                          
+                                         if(class(Objects$M)!="matrix")
+                                         {
+                                             Objects$M <- Objects$M$completeObs
+                                         } 
+                                                                                  
                                      }                
                        
                        
@@ -2478,15 +2574,15 @@ class PreProcessIDATs:
                }
             }
              
-           keep <- (rownames(Accessory$detP) %in% rownames(Objects[[1]]))
-           Accessory$detP <- Accessory$detP[keep,]  
-           keep <- (rownames(Accessory$beadcount) %in% rownames(Objects[[1]]))
-           Accessory$beadcount <- Accessory$beadcount[keep,]
+           #keep <- (rownames(Accessory$detP) %in% rownames(Objects[[1]]))
+           #Accessory$detP <- Accessory$detP[keep,]  
+           #keep <- (rownames(Accessory$beadcount) %in% rownames(Objects[[1]]))
+           #Accessory$beadcount <- Accessory$beadcount[keep,]
            
-           cat(nrow(Objects$M)) 
-           cat(nrow(Objects$beta) )
-           cat(nrow( Accessory$beadcount) )
-           cat(nrow( Accessory$detP) )
+           #cat(nrow(Objects$M)) 
+           #cat(nrow(Objects$beta) )
+           #cat(nrow( Accessory$beadcount) )
+           #cat(nrow( Accessory$detP) )
            
            if(FilterOption$filterBeads == TRUE)
             {   
