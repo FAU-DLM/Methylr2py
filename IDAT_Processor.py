@@ -12,6 +12,14 @@ from os.path import basename
 from collections import Counter
 import seaborn as sns
 import matplotlib.pyplot as plt 
+from bokeh.models import ColumnDataSource
+from bokeh.plotting import figure, show
+from bokeh.palettes import d3
+import bokeh.models as bmo
+from bokeh.io import output_notebook
+from bokeh.layouts import gridplot
+from bokeh.transform import factor_cmap
+from bokeh.models import NumeralTickFormatter
 
 pandas2ri.activate()
 numpy2ri.activate()
@@ -500,11 +508,7 @@ class PreProcessIDATs:
         import matplotlib.pyplot as plt
         import matplotlib.cm as cm
         from sklearn.manifold import MDS
-        import seaborn as sns
-        from seaborn import cubehelix_palette
-        sns.set()
-        #print(len(dataframe.columns))
-        #print(len(dataframe))
+       
         if len(dataframe.columns)<=len(dataframe):
             #print('Dataframe needed to be transposed')
             dataframe=dataframe.transpose()        
@@ -516,31 +520,76 @@ class PreProcessIDATs:
         dataframe=pd.DataFrame(imp.transform(dataframe),index = dataframe.index.to_numpy(),
                   columns=dataframe.columns)
         embedding = MDS(n_components=n_components)
-        X_transformed = embedding.fit_transform(X=dataframe.to_numpy(), y=pheno[group])
-        X_transformed=pd.DataFrame(X_transformed)
-        X_transformed[group]=pheno[group].reset_index(drop=True)           
+        X_transformed = embedding.fit_transform(X=dataframe.to_numpy(), y=pheno[group])   
         
-        fig, ax = plt.subplots()    
-        sns.scatterplot(components[0],components[1],hue=group, cmap=cubehelix_palette(as_cmap=True),data=X_transformed, ax=ax )
+        
+        X_transformed=pd.DataFrame(X_transformed)
+        X_transformed[group]=pheno[group].reset_index(drop=True)    
+        
+        X_transformed['ID']=pheno['ID'].to_numpy() 
+        X_transformed['case_ID']=pheno['case_ID'].to_numpy()
+        
+        X_transformed=X_transformed.rename(columns={components[0]: "a", components[1]: "b"})
+        
+        output_notebook()
+
+        p = figure(
+            tools="hover,pan,wheel_zoom,save",
+            toolbar_location="above",
+            title='MDS Plot',
+            plot_width=900, 
+            plot_height=700,
+        )
+        
+        if len(X_transformed[group].unique())!=2:
+            palette = d3['Category20'][len(X_transformed[group].unique())]
+            color_map = bmo.CategoricalColorMapper(factors=X_transformed[group].unique(),
+                                               palette=palette)
+        elif len(X_transformed[group].unique())==2:
+            colors=['red', 'green']
+            #from bokeh.palettes import brewer
+            #colors = brewer["Spectral"][len(X_transformed[group].unique())]
+
+            # Create a map between factor and color.
+            colormap = {k: colors[i] for i,k in enumerate(X_transformed[group].unique())}
+
+            # Create a list of colors for each value that we will be looking at.
+            X_transformed['colors'] = [colormap[x] for x in X_transformed[group]]
+
+
+        for key in X_transformed[group].unique():
+
+            keys=ColumnDataSource(X_transformed[X_transformed[group]==key])
             
-        #ax.legend(categories.unique())
-        ax.set_xlabel('Principal Component %s'  % (components[0]+1))
-        ax.set_ylabel('Principal Component %s'  % (components[1]+1))
-        ax.set_title('MDS Plot')
-        plt.show()       
+            if len(X_transformed[group].unique())!=2:
+                p.scatter(x='a', y='b', size=10, source=keys ,legend_label=key, color={'field': group, 'transform': color_map})
+            else:
+                p.scatter(x='a', y='b', size=10, source=keys ,legend_label=key, color='colors')
+                
+
+        p.legend.location = "top_left"
+        p.legend.click_policy="hide"
+        p.xaxis.axis_label = 'Principal Component %s'  % (components[0]+1)
+        p.yaxis.axis_label = 'Principal Component %s'  % (components[1]+1)
+        p.hover.tooltips = [("ID", '@ID'), ("category", '@'+group), ("Name", '@case_ID')]
+        p.title.text = 'MDS Plot'
+        show(p)      
     
     
     def getQC(self, addQC=False, phenotype=None, RGset=None):
         # give the samples descriptive names
         #check_list=[disease, sample]
         #for val in check_list: 
-        if phenotype is not None:
-            if phenotype not in pandas2ri.ri2py(robjects.r['as'](self.pheno,'data.frame')).columns.tolist():
+        
+        RGset=RGset if RGset else self.RGset
+        pheno= robjects.r("pData")(RGset)
+        if phenotype is not None:            
+            if phenotype not in pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist():
                 print('The pheno sheet does not contain a '+phenotype+' column you specified \n'
                          'These are the available column names:')
-                print(pandas2ri.ri2py(robjects.r['as'](self.pheno,'data.frame')).columns.tolist())
+                print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
                 return None, None, None, None
-        RGset=RGset if RGset else self.RGset
+        
         MSet = self.minfi.preprocessRaw(RGset)
         qc,cols,rows=robjects.r("""function ( MSet ) {
         qc = getQC(MSet)         
@@ -555,14 +604,14 @@ class PreProcessIDATs:
         cols_py=pd.Series(pandas2ri.ri2py(cols))
         datfr=pd.DataFrame(data_py.to_numpy(),index=rows_py,columns=cols_py)
         if addQC:            
-            pheno=pd.concat([pandas2ri.ri2py(robjects.r['as'](self.pheno,'data.frame')), data_py], axis=1, sort=False)
+            pheno=pd.concat([pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')), data_py], axis=1, sort=False)
             self.pheno=pandas2ri.py2ri(pheno)
         
         if phenotype is not None:
             try:       
-                datfr[phenotype]=pd.DataFrame(pandas2ri.ri2py(self.pheno))[phenotype].to_numpy()
+                datfr[phenotype]=pd.DataFrame(pandas2ri.ri2py(pheno))[phenotype].to_numpy()
             except:
-                datfr[phenotype]=pd.DataFrame(pandas2ri.ri2py(robjects.r['as'](self.pheno,'data.frame'))[phenotype]).to_numpy()
+                datfr[phenotype]=pd.DataFrame(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame'))[phenotype]).to_numpy()
         
         self.QC_df=datfr
         if phenotype is not None:
@@ -571,8 +620,9 @@ class PreProcessIDATs:
             return MSet, qc, datfr
                    
        
-    def plt_mu(self, hue=None, thresh=None):              
+    def plt_mu(self, hue=None, thresh=None, RGset=None):              
         
+        RGset=RGset if RGset else self.RGset
         if hue is not None:
             _,_, datfr, phenotype =self.getQC(addQC=False,phenotype=hue)   
             if phenotype is not None:
@@ -581,53 +631,133 @@ class PreProcessIDATs:
                 return
            
         else:
-            _,_, datfr =self.getQC(addQC=False)   
-         
+            _,_, datfr =self.getQC(addQC=False, phenotype=None, RGset=None)            
         
         hymin=datfr['mMed'].min()
-        vymin=datfr['uMed'].min()
+        vymin=datfr['uMed'].min()        
+        pheno= robjects.r("pData")(RGset)
+        try:       
+            datfr['ID']=pd.DataFrame(pandas2ri.ri2py(pheno))['ID'].to_numpy()
+        except:
+            datfr['ID']=pd.DataFrame(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame'))['ID']).to_numpy()
         
-        import seaborn as sns
-        fig, ax = plt.subplots()  
-        sns.scatterplot(x=datfr['mMed'],y=datfr['uMed'], hue=hue, ax=ax) 
-        if thresh is not None:
-            ax.vlines(x=thresh, ymin=vymin, ymax=thresh, ls='--')
-            ax.hlines(y=thresh, xmin=hymin, xmax=thresh, ls='--') 
+        
+        X_transformed=datfr
+        
+        
+        output_notebook()
+
+        p = figure(
+            tools="hover,pan,wheel_zoom,save",
+            toolbar_location="above",
+            title='MU Plot',
+            plot_width=900, 
+            plot_height=700,
+        )
+
+        palette = d3['Category20'][len(X_transformed[phenotype].unique())]
+        color_map = bmo.CategoricalColorMapper(factors=X_transformed[phenotype].unique(),
+                                           palette=palette)        
+       
+        for key in X_transformed[phenotype].unique():
+
+            keys=ColumnDataSource(X_transformed[X_transformed[phenotype]==key])
+
+            p.scatter(x='mMed', y='uMed', size=10, source=keys ,legend_label=key, color={'field': phenotype, 'transform': color_map})
+        #p.multi_line(xs=[[1, 2, 3], [2, 3, 4]], ys=[[6, 7, 2], [4, 5, 7]],
+        #     color=['red','green'])
+        p.multi_line(xs=[[thresh,thresh],[hymin,thresh]], ys=[[vymin,thresh],[thresh,thresh]],color='red')
+        p.legend.location = "top_left"
+        p.legend.click_policy="hide"
+        p.hover.tooltips = [ ("category", '@'+phenotype), ("ID", '@ID')]
+        p.title.text = 'MU Plot'
+        show(p)
             
             
+    
     def plt_failedbeads(self,RGset=None, percent=True):
-        
-        if RGset is None:
-            RGset=self.RGset        
-        _,nbeads_df=self.beadCount(RGset=RGset)
-        if percent:
-            failure_df=nbeads_df.isnull().sum()/len(nbeads_df)*100
-        else:
-            failure_df=nbeads_df.isnull().sum()
             
-        fig, ax = plt.subplots(figsize=(40,4))
-        
-        ax = sns.barplot(x=failure_df.index.to_numpy(), y=np.array(failure_df))
-        
-        if percent:
-            ax.set_title('Percentage of beadcounts below 3 per sample') 
-        else:
-            ax.set_title('Number of beadcounts below 3 per sample') 
+            if RGset is None:
+                RGset=self.RGset      
+
+            _,nbeads_df=self.beadCount(RGset=RGset)
+            nbeads_df=nbeads_df.transpose()
+            if percent:
+                #nbeads_df['failure_df']=nbeads_df.isnull().sum(axis=1)/len(nbeads_df)*100
+                nbeads_df=pd.DataFrame(nbeads_df.isnull().sum(axis=1)/len(nbeads_df.transpose())*100,columns=['failure_df'], index=nbeads_df.index)
+            else:
+                #nbeads_df['failure_df']=nbeads_df.isnull().sum(axis=1)  
+                nbeads_df=pd.DataFrame(nbeads_df.isnull().sum(axis=1),columns=['failure_df'], index=nbeads_df.index)
+
+
+            pheno= robjects.r("pData")(RGset)
+
+            nbeads_df['ID']=self.ri2py_dataframe(pheno, matrix=True)['ID'].to_numpy()     
+
+            nbeads_df['disease']=self.ri2py_dataframe(pheno, matrix=True)['disease'].to_numpy()       
+
+            nbeads_df['case_ID']=self.ri2py_dataframe(pheno, matrix=True)['case_ID'].to_numpy()       
+
             
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right') 
-        plt.rc('xtick', labelsize=6)
-        plt.tight_layout()
-        plt.show()
-        
-    def plt_meandetP(self, detPcut=0.01, SampleCutoff=0.1, log_scale=True, plot='all' ):
-        #self=preproidat
-        #dataframe=self.detectionP()        
+            p = figure(
+                    tools="hover,pan,wheel_zoom,save",
+                    toolbar_location="above",
+
+                    plot_width=950, 
+                    plot_height=700,           
+                    x_range=nbeads_df['ID'].to_numpy(),
+                    
+                    )
+            palette = d3['Category20'][len(nbeads_df['disease'].unique())]
+            color_map = bmo.CategoricalColorMapper(factors=nbeads_df['disease'].unique(),
+                                           palette=palette)    
+            legend_it = []
+            for key in nbeads_df['disease'].unique():
+
+
+                keys=ColumnDataSource(nbeads_df[nbeads_df['disease']==key])
+                p.vbar(x='ID', top='failure_df', width=1, line_color="white", legend_label=key,
+                           fill_color={'field': 'disease', 'transform': color_map}, source=keys)
+                #legend_it.append((key, [p]))
+
                
+            p.xgrid.grid_line_color = None
+            p.xaxis.axis_label = "Samples"
+            if percent:                
+                p.yaxis.axis_label = "Percentage"
+            else:
+                p.yaxis.axis_label = 'Numbers'
+                
+            p.x_range.range_padding = 0
+            p.x_range.group_padding=0
+            p.xaxis.major_label_text_font_size ='3pt'
+            p.xaxis.major_label_orientation = 1
+            p.legend.location = "top_left"
+            #legend = Legend(items=legend_it, location=(0, -60))
+            p.legend.click_policy="hide"
+            #p.add_layout(legend, 'right')
+            p.hover.tooltips = [ ("category", '@disease'), ("ID", '@ID'), ('case_ID','@case_ID')]
+            
+            if percent:
+                p.title.text = 'Percentage of beadcounts below 3 per sample'
+                
+            else:
+                p.title.text = 'Number of beadcounts below 3 per sample'
+            
+            output_notebook()
+            #p = gridplot([s1, s2,s3], ncols=1, toolbar_location="above")
+            show(p) 
+           
+        
+    def plt_meandetP(self, detPcut=0.01, SampleCutoff=0.1, log_scale=True, plot='all', RGset=None ):
+        
+        #dataframe=self.detectionP()        
+        RGset= RGset if RGset else self.RGset       
         #if len(dataframe)<=len(dataframe.columns):
         #    print('Dataframe needed to be transposed')
         #    dataframe=dataframe.transpose()  
         ### all, allsamples, badsamples, goodsamples    
-            
+        print('This may take a while')    
         detP = robjects.r("""function (rgset, detPcut, cutsamples) { 
             detP <- detectionP(rgset)
             numfail <- matrix(colMeans(detP >= detPcut))
@@ -654,122 +784,381 @@ class PreProcessIDATs:
             result=list(detP)
             
             }         
-          
-                
-           
+                  
            
            return(result)
            
         }""")(self.RGset,  detPcut, SampleCutoff)       
         
-        #print(len(pandas2ri.ri2py(detP)))
-        #print(pandas2ri.ri2py(detP_fails)[0])
+        
+        pheno= robjects.r("pData")(RGset)
+        pheno_py=pd.DataFrame(self.ri2py_dataframe(pheno, matrix=True))
+        detP_bad_py=None
         if len(pandas2ri.ri2py(detP))==2:
-            detP_py=self.ri2py_dataframe(detP[0], matrix=False)
+            detP_py=self.ri2py_dataframe(detP[0], matrix=False)    
+            
             detP_keep_py=self.ri2py_dataframe(detP[1], matrix=False)
             
-        
+            detP_py=detP_py.transpose()
+            detP_py=pd.DataFrame(detP_py.mean(axis=1),columns=['mean'], index=detP_py.index)
+            detP_keep_py=detP_keep_py.transpose()
+            detP_keep_py=pd.DataFrame(detP_keep_py.mean(axis=1),columns=['mean'], index=detP_keep_py.index)
+            
+            if len(np.transpose(pandas2ri.ri2py(detP[0])))!=len(np.transpose(pandas2ri.ri2py(detP[1]))):
+                bad_ind=[x for x in detP_py.index.tolist() if x not in detP_keep_py.index.tolist()]
+                detP_bad_py=detP_py.loc[bad_ind]
+                detP_bad_py=pd.DataFrame(detP_bad_py.mean(axis=1),columns=['mean'], index=detP_bad_py.index)
+                
+            detP_py['ID']=pheno_py['ID'].to_numpy()
+            
+            
+            detP_py['disease']=pheno_py['disease'].to_numpy()    
+            
+            detP_py['case_ID']=pheno_py['case_ID'].to_numpy()                
+            
+            
+            detP_keep_py['ID']=pheno_py[pheno_py['ID'].isin(detP_keep_py.index)]['ID'].to_numpy()              
+            
+            detP_keep_py['disease']=pheno_py[pheno_py['ID'].isin(detP_keep_py.index)]['disease'].to_numpy()   
+            
+            detP_keep_py['case_ID']=pheno_py[pheno_py['ID'].isin(detP_keep_py.index)]['case_ID'].to_numpy()              
+            
+            
+            if detP_bad_py is not None:
+                detP_bad_py['ID']=pheno_py[pheno_py['ID'].isin(detP_bad_py.index)]['ID'].to_numpy()              
+            
+                detP_bad_py['disease']=pheno_py[pheno_py['ID'].isin(detP_bad_py.index)]['disease'].to_numpy()   
+
+                detP_bad_py['case_ID']=pheno_py[pheno_py['ID'].isin(detP_bad_py.index)]['case_ID'].to_numpy()   
+                
         
         elif len(pandas2ri.ri2py(detP))==1:
             detP_py=self.ri2py_dataframe(detP[0], matrix=False)     
+            detP_py['ID']=pheno_py['ID'].to_numpy()
+            
+            
+            detP_py['disease']=pheno_py['disease'].to_numpy()   
+            
+            detP_py['case_ID']=pheno_py['case_ID'].to_numpy()  
             
         
                
-        
-        if plot== 'all' and len(pandas2ri.ri2py(detP))==2:             
+        print('Almost done!') 
+        if plot== 'all' and len(pandas2ri.ri2py(detP))==2: 
             
-            fig, (ax1, ax2) = plt.subplots(figsize=(40,4),nrows=2, ncols=1) 
-            #fig.subplots_adjust=0.85
-            ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)
-            ax2 = sns.barplot(x=detP_keep_py.columns, y=detP_keep_py.mean(axis=0).to_numpy(), ax=ax2)
             
-            if log_scale:
-                ax1.set_yscale('log')
-                ax2.set_yscale('log')
+            s1 = figure(
+                tools="hover,pan,wheel_zoom,save",
+                toolbar_location="above",
                 
+                plot_width=950, 
+                plot_height=700,           
+                x_range=detP_py['ID'].to_numpy(),
+                #y_range=(test_py['mean'].min(), test_py['mean'].max()),
+                y_axis_type="log"
+                )
+            palette = d3['Category20'][len(detP_py['disease'].unique())]
+            color_map = bmo.CategoricalColorMapper(factors=detP_py['disease'].unique(),
+                                           palette=palette) 
+
+            for key in detP_py['disease'].unique():
+
+
+                keys=ColumnDataSource(detP_py[detP_py['disease']==key])
+                s1.vbar(x='ID', top='mean', bottom=detP_py['mean'].min(), width=1, line_color="white", legend_label=key,
+                       fill_color={'field': 'disease', 'transform': color_map}, source=keys)
+                s1.line(x=[0,len(detP_py['ID'].to_numpy())], y=[detPcut,detPcut],color='red')
+
+            #p.vbar(x='ID', top='mean', width=1, line_color="white", legend_field='ID',
+            #          fill_color={'field': 'disease', 'transform': color_map}, source=source)
+            #caption = Label(text='cutoff')
+            #s2.add_layout(caption, 'above')
+            s1.xgrid.grid_line_color = None
+            s1.xaxis.axis_label = "Samplenames"
+            s1.yaxis.axis_label = "Mean detP"
+            #s1.y_range.start = 0
+            s1.x_range.range_padding = 0
+            s1.x_range.group_padding=0
+            s1.xaxis.major_label_text_font_size ='3pt'
+            s1.xaxis.major_label_orientation = 1
+            s1.legend.location = "top_left"
+            s1.legend.click_policy="hide"
+            s1.hover.tooltips = [ ("category", '@disease'), ("ID", '@ID'), ('case_ID','@case_ID')]
+            s1.title.text = 'All Samples'
             
-            ax1.axhline(detPcut, ls='--')
-            ax2.axhline(detPcut, ls='--')
             
-            ax1.set_title('All Samples')   
-            ax2.set_title('Good Samples')   
+            s2 = figure(
+                tools="hover,pan,wheel_zoom,save",
+                toolbar_location="above",
+                
+                plot_width=950, 
+                plot_height=700,           
+                x_range=detP_keep_py['ID'].to_numpy(),
+                #y_range=(test_py['mean'].min(), test_py['mean'].max()),
+                y_axis_type="log"
+                )
+
+            palette = d3['Category20'][len(detP_keep_py['disease'].unique())]
+            color_map = bmo.CategoricalColorMapper(factors=detP_keep_py['disease'].unique(),
+                                           palette=palette) 
             
-            ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right')
-            ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, horizontalalignment='right')
-            plt.rc('xtick', labelsize=6)
-            plt.tight_layout()
-            plt.show()
-            return 
-        
+            for key in detP_keep_py['disease'].unique():
+
+
+                keys=ColumnDataSource(detP_keep_py[detP_keep_py['disease']==key])
+                s2.vbar(x='ID', top='mean', bottom=detP_keep_py['mean'].min(), width=1, line_color="white", legend_label=key,
+                       fill_color={'field': 'disease', 'transform': color_map}, source=keys)
+                s2.line(x=[0,len(detP_keep_py['ID'].to_numpy())], y=[detPcut,detPcut],color='red')
+
+            #p.vbar(x='ID', top='mean', width=1, line_color="white", legend_field='ID',
+            #          fill_color={'field': 'disease', 'transform': color_map}, source=source)
+            #caption = Label(text='cutoff')
+            #s2.add_layout(caption, 'above')
+            s2.xgrid.grid_line_color = None
+            s2.xaxis.axis_label = "Samplenames"
+            s2.yaxis.axis_label = "Mean detP"
+            #s1.y_range.start = 0
+            s2.x_range.range_padding = 0
+            s2.x_range.group_padding=0
+            s2.xaxis.major_label_text_font_size ='3pt'
+            s2.xaxis.major_label_orientation = 1
+            s2.legend.location = "top_left"
+            s2.legend.click_policy="hide"
+            s2.hover.tooltips = [ ("category", '@disease'), ("ID", '@ID'), ('case_ID','@case_ID')]
+            s2.title.text = 'Good Samples'
+            
+            
+            if detP_bad_py is not None:
+                s3 = figure(
+                    tools="hover,pan,wheel_zoom,save",
+                    toolbar_location="above",
+
+                    plot_width=950, 
+                    plot_height=700,           
+                    x_range=detP_bad_py['ID'].to_numpy(),
+                    #y_range=(test_py['mean'].min(), test_py['mean'].max()),
+                    y_axis_type="log"
+                    )
+                palette = d3['Category20'][len(detP_bad_py['disease'].unique())]
+                color_map = bmo.CategoricalColorMapper(factors=detP_bad_py['disease'].unique(),
+                                           palette=palette) 
+
+                for key in detP_bad_py['disease'].unique():
+
+
+                    keys=ColumnDataSource(detP_bad_py[detP_bad_py['disease']==key])
+                    s3.vbar(x='ID', top='mean', bottom=detP_bad_py['mean'].min(), width=1, line_color="white", legend_label=key,
+                           fill_color={'field': 'disease', 'transform': color_map}, source=keys)
+                    s3.line(x=[0,len(detP_bad_py['ID'].to_numpy())], y=[detPcut,detPcut],color='red')
+
+                #p.vbar(x='ID', top='mean', width=1, line_color="white", legend_field='ID',
+                #          fill_color={'field': 'disease', 'transform': color_map}, source=source)
+                #caption = Label(text='cutoff')
+                #s2.add_layout(caption, 'above')
+                s3.xgrid.grid_line_color = None
+                s3.xaxis.axis_label = "Samplenames"
+                s3.yaxis.axis_label = "Mean detP"
+                #s1.y_range.start = 0
+                s3.x_range.range_padding = 0
+                s3.x_range.group_padding=0
+                s3.xaxis.major_label_text_font_size ='3pt'
+                s3.xaxis.major_label_orientation = 1
+                s3.legend.location = "top_left"
+                s3.legend.click_policy="hide"
+                s3.hover.tooltips = [ ("category", '@disease'), ("ID", '@ID'), ('case_ID','@case_ID')]
+                s3.title.text = 'Good Samples'
+            
+                output_notebook()
+                p = gridplot([s1, s2,s3], ncols=1, toolbar_location="above")
+                show(p) 
+                
+            else:  
+                output_notebook()
+                p = gridplot([s1, s2], ncols=1, toolbar_location="above")
+                show(p)           
+            
+            return         
+    
         
         
         if plot== 'all' and len(pandas2ri.ri2py(detP))==1:  
                
             
-            fig, (ax1) = plt.subplots(figsize=(40,4),nrows=1, ncols=1)    
-            #fig.subplots_adjust=0.85
-            ax1 = sns.barplot(x=detP_py.columns, y=detP_py.mean(axis=0).to_numpy(), ax=ax1)            
-            
-            if log_scale:
-                ax1.set_yscale('log')               
-            
-            ax1.axhline(detPcut, ls='--')
-            
-            ax1.set_title('All Samples')  
-                         
-            ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, horizontalalignment='right')            
-            plt.rc('xtick', labelsize=6)
-            plt.tight_layout()
-            plt.show()
+            p = figure(
+                tools="hover,pan,wheel_zoom,save",
+                toolbar_location="above",
+                
+                plot_width=950, 
+                plot_height=700,           
+                x_range=detP_py['ID'].to_numpy(),
+                #y_range=(test_py['mean'].min(), test_py['mean'].max()),
+                y_axis_type="log"
+                )
+            palette = d3['Category20'][len(detP_py['disease'].unique())]
+            color_map = bmo.CategoricalColorMapper(factors=detP_py['disease'].unique(),
+                                           palette=palette) 
+
+            for key in detP_py['disease'].unique():
+
+
+                keys=ColumnDataSource(detP_py[detP_py['disease']==key])
+                p.vbar(x='ID', top='mean', bottom=detP_py['mean'].min(), width=1, line_color="white", legend_label=key,
+                       fill_color={'field': 'disease', 'transform': color_map}, source=keys)
+                p.line(x=[0,len(detP_py['ID'].to_numpy())], y=[detPcut,detPcut],color='red')
+
+            p.xgrid.grid_line_color = None
+            p.xaxis.axis_label = "Samplenames"
+            p.yaxis.axis_label = "Mean detP"
+            #s1.y_range.start = 0
+            p.x_range.range_padding = 0
+            p.x_range.group_padding=0
+            p.xaxis.major_label_text_font_size ='3pt'
+            p.xaxis.major_label_orientation = 1
+            p.legend.location = "top_left"
+            p.legend.click_policy="hide"
+            p.hover.tooltips = [ ("category", '@disease'), ("ID", '@ID'), ('case_ID','@case_ID')]
+            p.title.text = 'All Samples'
+            output_notebook()
+                
+            show(p)    
             return 
         
                 
         
-        if plot== 'allsamples':
-            
-            dataframe=detP_py
-            if len(dataframe)<=len(dataframe.columns):
-                print('Dataframe needed to be transposed')
-                dataframe=dataframe.transpose()  
-            fig, ax = plt.subplots(figsize=(40,4))
-            #fig.subplots_adjust=0.85
-            ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
-            if log_scale:
-                ax.set_yscale('log')
-            ax.axhline(detPcut, ls='--')    
-            ax.set_title('All Samples') 
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right') 
-            plt.rc('xtick', labelsize=6)
-            plt.tight_layout()
-            plt.show()  
+        if plot== 'allsamples':            
+              
+            p = figure(
+                tools="hover,pan,wheel_zoom,save",
+                toolbar_location="above",
+                
+                plot_width=950, 
+                plot_height=700,           
+                x_range=detP_py['ID'].to_numpy(),
+                #y_range=(test_py['mean'].min(), test_py['mean'].max()),
+                y_axis_type="log"
+                )
+            palette = d3['Category20'][len(detP_py['disease'].unique())]
+            color_map = bmo.CategoricalColorMapper(factors=detP_py['disease'].unique(),
+                                           palette=palette) 
+
+            for key in detP_py['disease'].unique():
+
+
+                keys=ColumnDataSource(detP_py[detP_py['disease']==key])
+                p.vbar(x='ID', top='mean', bottom=detP_py['mean'].min(), width=1, line_color="white", legend_label=key,
+                       fill_color={'field': 'disease', 'transform': color_map}, source=keys)
+                p.line(x=[0,len(detP_py['ID'].to_numpy())], y=[detPcut,detPcut],color='red')
+
+            p.xgrid.grid_line_color = None
+            p.xaxis.axis_label = "Samplenames"
+            p.yaxis.axis_label = "Mean detP"
+            #s1.y_range.start = 0
+            p.x_range.range_padding = 0
+            p.x_range.group_padding=0
+            p.xaxis.major_label_text_font_size ='3pt'
+            p.xaxis.major_label_orientation = 1
+            p.legend.location = "top_left"
+            p.legend.click_policy="hide"
+            p.hover.tooltips = [ ("category", '@disease'), ("ID", '@ID'), ('case_ID','@case_ID')]
+            p.title.text = 'All Samples'
+            output_notebook()
+                
+            show(p) 
             return
             
         
         if plot== 'goodsamples' and len(pandas2ri.ri2py(detP))==2:   
-            dataframe=detP_keep_py
-            if len(dataframe)<=len(dataframe.columns):
-                print('Dataframe needed to be transposed')
-                dataframe=dataframe.transpose()  
-            fig, ax = plt.subplots(figsize=(40,10))    
-            #fig.subplots_adjust=0.85
-            ax = sns.barplot(x=dataframe.columns, y=dataframe.mean(axis=0).to_numpy())
-            if log_scale:
-                ax.set_yscale('log')
-            ax.axhline(detPcut, ls='--')    
-            ax.set_title('Good Samples')
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right')
-            plt.rc('xtick', labelsize=6)
-            plt.tight_layout()
-            plt.show()   
+            p = figure(
+                tools="hover,pan,wheel_zoom,save",
+                toolbar_location="above",
+                
+                plot_width=950, 
+                plot_height=700,           
+                x_range=detP_keep_py['ID'].to_numpy(),
+                #y_range=(test_py['mean'].min(), test_py['mean'].max()),
+                y_axis_type="log"
+                )
+            palette = d3['Category20'][len(detP_keep_py['disease'].unique())]
+            color_map = bmo.CategoricalColorMapper(factors=detP_keep_py['disease'].unique(),
+                                           palette=palette) 
+
+            for key in detP_keep_py['disease'].unique():
+
+
+                keys=ColumnDataSource(detP_keep_py[detP_keep_py['disease']==key])
+                p.vbar(x='ID', top='mean', bottom=detP_keep_py['mean'].min(), width=1, line_color="white", legend_label=key,
+                       fill_color={'field': 'disease', 'transform': color_map}, source=keys)
+                p.line(x=[0,len(detP_keep_py['ID'].to_numpy())], y=[detPcut,detPcut],color='red')
+
+            p.xgrid.grid_line_color = None
+            p.xaxis.axis_label = "Samplenames"
+            p.yaxis.axis_label = "Mean detP"
+            #s1.y_range.start = 0
+            p.x_range.range_padding = 0
+            p.x_range.group_padding=0
+            p.xaxis.major_label_text_font_size ='3pt'
+            p.xaxis.major_label_orientation = 1
+            p.legend.location = "top_left"
+            p.legend.click_policy="hide"
+            p.hover.tooltips = [ ("category", '@disease'), ("ID", '@ID'), ('case_ID','@case_ID')]
+            p.title.text = 'Good Samples'
+            output_notebook()
+                
+            show(p)  
             return
         
         if plot== 'goodsamples' and len(pandas2ri.ri2py(detP))==1:  
             print('no goodsamples present')
             return
+        
+        
+        if plot== 'badsamples' and detP_bad_py is not None:   
+            p = figure(
+                tools="hover,pan,wheel_zoom,save",
+                toolbar_location="above",
+                
+                plot_width=950, 
+                plot_height=700,           
+                x_range=detP_bad_py['ID'].to_numpy(),
+                #y_range=(test_py['mean'].min(), test_py['mean'].max()),
+                y_axis_type="log"
+                )
+            palette = d3['Category20'][len(detP_bad_py['disease'].unique())]
+            color_map = bmo.CategoricalColorMapper(factors=detP_bad_py['disease'].unique(),
+                                           palette=palette) 
+
+            for key in detP_bad_py['disease'].unique():
+
+
+                keys=ColumnDataSource(detP_bad_py[detP_bad_py['disease']==key])
+                p.vbar(x='ID', top='mean', bottom=detP_bad_py['mean'].min(), width=1, line_color="white", legend_label=key,
+                       fill_color={'field': 'disease', 'transform': color_map}, source=keys)
+                p.line(x=[0,len(detP_bad_py['ID'].to_numpy())], y=[detPcut,detPcut],color='red')
+
+            p.xgrid.grid_line_color = None
+            p.xaxis.axis_label = "Samplenames"
+            p.yaxis.axis_label = "Mean detP"
+            #s1.y_range.start = 0
+            p.x_range.range_padding = 0
+            p.x_range.group_padding=0
+            p.xaxis.major_label_text_font_size ='3pt'
+            p.xaxis.major_label_orientation = 1
+            p.legend.location = "top_left"
+            p.legend.click_policy="hide"
+            p.hover.tooltips = [ ("category", '@disease'), ("ID", '@ID'), ('case_ID','@case_ID')]
+            p.title.text = 'Bad Samples'
+            output_notebook()
+                
+            show(p)  
+            return
+        
+        if plot== 'badsamples' and detP_bad_py is None:  
+            print('no badsamples present')
+            return
             
         else:
             print('Please specify which plots you would want: \n'
-            'either "all" "allsamples" or "goodsamples" may be specified')
+            'either "all", "allsamples", "goodsamples" or "badsamples" may be specified')
             return
         
         
@@ -1241,6 +1630,7 @@ class PreProcessIDATs:
     
     
     def screeplot(self, RGset=None, nmax=10):
+       
         if RGset:
             RGset=RGset
         else:
@@ -1272,22 +1662,39 @@ class PreProcessIDATs:
             }""")(RGset, nmax)
       
         m=numpy2ri.ri2py(pcs)
-        df=pd.DataFrame(np.array(m)).transpose()
+        df=pd.DataFrame(np.array(m)).transpose()   
         
-        import seaborn as sns
-        import matplotlib.pyplot as plt
-        fig,ax=plt.subplots()
-        #for i in df.transpose().to_numpy().tolist():
-            #for j in i:
-                #print(j)
-                #sns.barplot(j)
-        x = np.array(df.columns.tolist())
-        y1 = df.to_numpy()[0]
-        sns.barplot(x=x, y=y1, ax=ax)
-        ax.set_title("Screeplot")
-        ax.set_ylabel("Proportion of Variance")
-        ax.set_xlabel("Principle components")
-        plt.show()            
+       
+        x = df.columns.tolist()
+        x=[str(element+1) for element in x]
+        y1 = df.to_numpy()[0].tolist()       
+        
+        source = ColumnDataSource(data=dict(x=x, y=y1))
+        p = figure(
+                tools="hover,pan,wheel_zoom,save",
+                toolbar_location="above",                
+                plot_width=950, 
+                plot_height=700,
+                x_range=x                
+                )   
+        
+        palette = d3['Category20'][len(x)]
+        p.vbar(x='x', top='y', width=1, line_color="white", source=source, legend_field="x",
+              fill_color=factor_cmap('x', palette=palette, factors=x))
+        
+        p.xgrid.grid_line_color = None
+        p.xaxis.axis_label = "Principile components"
+        p.yaxis.axis_label = "Proportion of explained variance"
+        p.yaxis.formatter = NumeralTickFormatter(format='0 %')
+        p.legend.orientation = "horizontal"
+        p.legend.location = "top_center"
+        #p.legend.click_policy="hide"
+        p.legend.title = 'Principle components'
+        p.hover.tooltips = [ ("Explained variance", '@y')]
+        p.title.text = 'Screeplot'
+        output_notebook()
+                
+        show(p)            
         
     
     def plt_covariates(self, pheno=None, matrix=None, pcs=2):
@@ -1347,7 +1754,8 @@ class PreProcessIDATs:
                  mSetSq <- preprocessFunnorm(RGset, nPCs=nPCs, sex = NULL, bgCorr = TRUE, dyeCorr = TRUE, verbose = TRUE)
                 return(mSetSq)
                 }""")(self.RGset, nPCs)
-            self.insert_cell_types() 
+            if celltype_adoption:
+                self.insert_cell_types()
             pheno=robjects.r("pData")(self.GRset)
             return self.GRset, pheno
 
@@ -1370,7 +1778,8 @@ class PreProcessIDATs:
                                verbose = TRUE)
                     return(mSetSq)
                     }""")(self.RGset)
-            self.insert_cell_types()
+            if celltype_adoption:
+                self.insert_cell_types()
             pheno=robjects.r("pData")(self.GRset)
             return self.GRset, pheno   
 
@@ -3571,9 +3980,10 @@ class PreProcessIDATs:
 
             if sva:
                 print('You have chosen to include surrogate variable analysis')  
-            print('You are adjusting for these variables: %s' % (adjust_vars))
-            print('You are correcting for these variables: %s' % (correction_vars))
-
+            if len(adjust_vars)!=0:    
+                print('You are adjusting for these variables: %s' % (adjust_vars))
+            if len(correction_vars)!=0:
+                print('You are correcting for these variables: %s' % (correction_vars))
 
             self.get_annotation()     
             #mod, mod0
@@ -3604,25 +4014,7 @@ class PreProcessIDATs:
             colnames(mod0)<- make.names(colnames(mod0))
             rownames(mod0)<-make.names(rownames(mod0))        
 
-            ####SVA#####
-
-            if (sva)
-            {    cat('creating model for SVA')
-                 n.sv = num.sv(M,mod,method="leek")
-
-                 svobj = sva(M,mod,mod0,n.sv=n.sv)
-
-                 modSv = cbind(mod,svobj$sv)
-                 colnames(modSv)<- make.names(colnames(modSv))
-                 rownames(modSv)<-make.names(rownames(modSv))
-            }
-
-            else
-            {
-                 cat('creating model')
-                 modSv = mod
-
-            }  
+            modSv=mod
 
             print(form_mod)
             #print(form_mod0)
@@ -3658,9 +4050,27 @@ class PreProcessIDATs:
                     }                 
              } 
 
+            ####SVA#####
 
+            if (sva)
+            {    cat('creating model for SVA')
+                 n.sv = num.sv(M,modSv,method="leek")
 
-            fit <- lmFit(M,modSv)      
+                 svobj = sva(M,modSv,mod0,n.sv=n.sv)
+
+                 modSv = cbind(modSv,svobj$sv)
+                 colnames(modSv)<- make.names(colnames(modSv))
+                 rownames(modSv)<-make.names(rownames(modSv))
+            }
+
+            else
+            {
+                 cat('creating model')
+                 #modSv = mod
+
+            }  
+
+            fit <- lmFit(M,modSv)        
 
 
 
@@ -3702,7 +4112,7 @@ class PreProcessIDATs:
 
             # look at the numbers of DM CpGs at FDR < 0.05
             cat('Computing statistics for experiment')    
-            dectest<- summary(decideTests(fit2, p.value=pvalue))           
+            dectest<- summary(decideTests(fit2, method='global', adjust.method="BH",p.value=pvalue))           
 
             cat('Aligning annotation')
             #annSub <- ann[match(rownames(M),ann$Name),]
@@ -3716,8 +4126,9 @@ class PreProcessIDATs:
                             for (i in 1:choose(length(array),2)) {        
                                 #print(i)
 
-                                top<-topTable(fit2, genelist=annSub, coef=i,number=number, p.value=adjpval )
-
+                                top<-topTable(fit2, genelist=annSub, coef=i,number=number,  adjust.method="BH", sort.by="P", p.value=adjpval )
+                                
+                                top<-top[which( top$adj.P.Val < adjpval),]
                                 topresults[[i]] <- top    
 
                             }
@@ -3728,7 +4139,8 @@ class PreProcessIDATs:
                         else{
 
                             cat('Computing contrast for experiment') 
-                            top<-topTable(fit2, genelist=annSub, coef=coef, number=number, p.value=adjpval )   
+                            top<-topTable(fit2, genelist=annSub, coef=coef,number=number,  adjust.method="BH", sort.by="P", p.value=adjpval )
+                            top<-top[which( top$adj.P.Val < adjpval),]    
                             top<-list(top)
                             result=list(top,matr$des,dectest)
 
