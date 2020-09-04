@@ -15,10 +15,9 @@ One major advantage is that it (Python programming language) facilitates the use
 
 All software needed to be installed is shown in our "https://github.com/FAU-DLM/GPU-Jupyterhub" as we do all analysis via a docker hosted jupyterhub deep learning platform.
 
-> Folder structure 
-
 ### *It is important that there is no other pheno- or sample-sheet in the path (recursively also!!) specified where the module looks up the phenosheet!!!
 
+> Folder structure 
     .
     ├── Script                   # (Ipython Notebook i.e.)
     │   └───IDAT_Folder
