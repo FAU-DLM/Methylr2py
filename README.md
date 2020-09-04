@@ -15,6 +15,7 @@ One major advantage is that it (Python programming language) facilitates the use
 
 All software needed to be installed is shown in our "https://github.com/FAU-DLM/GPU-Jupyterhub" as we do all analysis via a docker hosted jupyterhub deep learning platform.
 
+> Folder structure
 Root:.
 ├───Script (Ipython Notebook i.e.)
 │   └───IDAT_Folder
