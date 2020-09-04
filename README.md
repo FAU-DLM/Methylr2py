@@ -17,6 +17,7 @@ All software needed to be installed is shown in our "https://github.com/FAU-DLM/
 
 
 Root:.
+
 ├───Script (Ipython Notebook i.e.)
 
 │    └───IDAT_Folder
