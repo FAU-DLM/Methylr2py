@@ -1,5 +1,7 @@
 import pandas as pd
+import numpy as np
 import rpy2.robjects as robjects
+from rpy2.robjects import pandas2ri, numpy2ri
 from rpy2.robjects.packages import importr 
 from rpy2.robjects import r
 import seaborn as sns
