@@ -18,9 +18,13 @@ All software needed to be installed is shown in our "https://github.com/FAU-DLM/
 
 Root:.
 ├───Script (Ipython Notebook i.e.)
+
 │    └───IDAT_Folder
+
 │        └───Subfolder (*) 
+
 │            └───Processed Phenosheet
+
 └─── Samplesheet       
 
 * It is important that there is no other pheno- or sample-sheet in the path (recursively also!!) specified where the module looks up the phenosheet!!!
