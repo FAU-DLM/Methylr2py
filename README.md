@@ -21,20 +21,6 @@ Root:.
 │    └───IDAT_Folder
 │        └───Subfolder (*) 
 │            └───Processed Phenosheet
-└─── Samplesheet        
-
-app
-└── screens
-    └── App
-        └── screens
-            ├── Admin
-            │   └── screens
-            │       ├── Reports
-            │       └── Users
-            └── Course
-                └── screens
-                    └── Assignments
-
-
+└─── Samplesheet       
 
 * It is important that there is no other pheno- or sample-sheet in the path (recursively also!!) specified where the module looks up the phenosheet!!!
