@@ -1,14 +1,12 @@
 # Methylr2py
-This repo contains code to the folowing publication:
+Python wrapped R packages for methylation array analysis.
+
+This repo contains code to perform methylation array analysis as used for the following publication.
 
 Title: Mosaic trisomy of chromosome 1q in human brain tissue associates with unilateral polymicrogyria, very early-onset focal epilepsy, and severe developmental delay.
        "bioRxiv 2020.07.16.206490; doi: https://doi.org/10.1101/2020.07.16.206490"
 
-Python wrapped R packages for methylation array analysis.
-
-This repo contains code to perform methylation array analysis. 
-
-We have taken some freely available R packages as
+ We have taken some freely available R packages such as
 'minfi'
 'ChAMP'
 'DNAmArray' and some other packages and wrapped them with r2py in order to get them connected to Python.
