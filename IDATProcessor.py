@@ -70,20 +70,24 @@ class PreProcessIDATs:
         
         
         
-    def load_idats(self, use_cache=False, rename_samples=True, parallel=True, nworkers=2, verbose=True, extended=True):
+    def load_idats(self,savedir=None, phenosheetdir=None, use_cache=False, rename_samples=True, parallel=True, nworkers=2, verbose=True, extended=True):
         """For minfi pipeline, load IDATs from specified idat_dir."""
         
-        #from methylprep.files import get_sample_sheet, find_sample_sheet
-        #sample_sheet = get_sample_sheet(data_dir, filepath=sample_sheet_filepath)
+        if savedir is not None:
+            cache_storage_path = os.path.join(savedir,'RGSet.rds')
+        else:
+            cache_storage_path = os.path.join(self.idat_dir,'RGSet.rds')
         
-        cache_storage_path = os.path.join(self.idat_dir,'RGSet.rds')
-        self.pheno = self.minfi.read_metharray_sheet(self.idat_dir)
+        if phenosheetdir is not None:           
+            self.pheno = self.minfi.read_metharray_sheet(phenosheetdir)
+        else:
+            self.pheno = self.minfi.read_metharray_sheet(self.idat_dir) 
         
         if use_cache:
             self.RGset=robjects.r('readRDS')(cache_storage_path)            
         else:
             if parallel:
-                self.RGset=self.load_idats_parallel(targets=self.pheno,verbose=verbose,extended=extended,nworkers=nworkers)
+                self.RGset=self.__load_idats_parallel(targets=self.pheno,verbose=verbose,extended=extended,nworkers=nworkers)
                 
             else:    
                 self.RGset = self.minfi.read_metharray_exp(targets=self.pheno, extended=extended)
@@ -102,7 +106,7 @@ class PreProcessIDATs:
         self.pheno_orig_py=self.ri2py_dataframe(self.pheno_orig, matrix=True)
             
     
-    def load_idats_parallel(self, targets, verbose=True, extended=True, nworkers=2 ):
+    def __load_idats_parallel(self, targets, verbose=True, extended=True, nworkers=2 ):       
         targets=targets
         verbose=verbose
         nworkers=nworkers
