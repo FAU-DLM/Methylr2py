@@ -22,7 +22,7 @@ from bokeh.transform import factor_cmap
 from bokeh.models import NumeralTickFormatter
 import methylcheck
 from scipy.special import comb
-PATH="/home/Deep_Learner/private/Methyl_Array/Katja_850K/EPIC.hg19.manifest.tsv.gz"
+PATH="./manifest/EPIC.hg19.manifest.tsv.gz" ###--->can be downloaded here :"http://zwdzwd.io/InfiniumAnnotation/current/EPIC/"
 pandas2ri.activate()
 numpy2ri.activate()
 
