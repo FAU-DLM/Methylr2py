@@ -25,14 +25,16 @@ class Plotter:
     def plt_mds(self, dataframe=None, pheno=None,  top=1000, n_components=2, group='disease', components=(0,1)):
 
         if dataframe is None:
+            #beta,_=self.IDAT_Processor.getBeta(self.IDAT_Processor.RGset)
             beta=self.IDAT_Processor.minfi.getBeta(self.IDAT_Processor.RGset)
-            dataframe=self.IDAT_Processor.ri2py_dataframe(beta, matrix=False).transpose()
+            dataframe=self.IDAT_Processor.rpy2_to_pandas(beta).transpose()
+            dataframe=beta.transpose()
 
         if pheno is None:
-            try:
-                pheno=self.IDAT_Processor.ri2py_dataframe(self.IDAT_Processor.pheno, matrix=True)
-            except:
-                pheno=self.IDAT_Processor.ri2py_dataframe(self.IDAT_Processor.pheno, matrix=False)
+           
+            pheno=self.IDAT_Processor.rpy2_to_pandas(self.IDAT_Processor.pheno)
+            #except:
+            #    pheno=self.IDAT_Processor.ri2py_dataframe(self.IDAT_Processor.pheno, matrix=False)
 
         import matplotlib.pyplot as plt
         import matplotlib.cm as cm
@@ -119,10 +121,11 @@ class Plotter:
         hymin=datfr['mMed'].min()
         vymin=datfr['uMed'].min()
         pheno= robjects.r("pData")(RGset)
-        try:
-            datfr['ID']=pd.DataFrame(pandas2ri.ri2py(pheno))['ID'].to_numpy()
-        except:
-            datfr['ID']=pd.DataFrame(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame'))['ID']).to_numpy()
+        pheno_rec=robjects.r['as'](pheno,'data.frame')
+        
+        datfr['ID']=pd.DataFrame(pheno_rec)['ID'].to_numpy()
+        #except:
+        #    datfr['ID']=pd.DataFrame(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame'))['ID']).to_numpy()
 
 
         X_transformed=datfr
@@ -197,12 +200,14 @@ class Plotter:
 
 
             pheno= robjects.r("pData")(RGset)
+            pheno_rec= robjects.r['as'](pheno,'data.frame')            
+            
 
-            nbeads_df['ID']=self.IDAT_Processor.ri2py_dataframe(pheno, matrix=True)['ID'].to_numpy()
+            nbeads_df['ID']=pd.DataFrame(pheno_rec)['ID'].to_numpy()
 
-            nbeads_df['disease']=self.IDAT_Processor.ri2py_dataframe(pheno, matrix=True)['disease'].to_numpy()
+            nbeads_df['disease']=pd.DataFrame(pheno_rec)['disease'].to_numpy()
 
-            nbeads_df['case_ID']=self.IDAT_Processor.ri2py_dataframe(pheno, matrix=True)['case_ID'].to_numpy()
+            nbeads_df['case_ID']=pd.DataFrame(pheno_rec)['case_ID'].to_numpy()
 
 
             p = figure(
@@ -254,7 +259,7 @@ class Plotter:
             #p = gridplot([s1, s2,s3], ncols=1, toolbar_location="above")
             show(p)
 
-    def plt_meandetP(self, detPcut=0.01, SampleCutoff=0.1, log_scale=True, plot='all', RGset=None ):
+    def plt_meandetP( self,detPcut=0.01, SampleCutoff=0.1, log_scale=True, plot='all', RGset=None ):
         
         RGset= RGset if RGset else self.IDAT_Processor.RGset
           
@@ -271,33 +276,45 @@ class Plotter:
                 rgset_keeps <- rgset[,RemainSample]
 
                 detP_keeps <- detectionP(rgset_keeps)
-                result=list(detP,detP_keeps)
+                result=list(detP, rownames(detP), colnames(detP),detP_keeps, rownames(detP_keeps), colnames(detP_keeps))
             }
             else{
-            result=list(detP)
+            result=list(detP,rownames(detP), colnames(detP))
             }
            return(result)
 
         }""")(self.IDAT_Processor.RGset,  detPcut, SampleCutoff)
-
+        
         pheno= robjects.r("pData")(RGset)
-        pheno_py=pd.DataFrame(self.IDAT_Processor.ri2py_dataframe(pheno, matrix=True))
+        pheno_rec=robjects.r['as'](pheno,'data.frame')
+        pheno_py=pd.DataFrame(pheno_rec)
         detP_bad_py=None
-        if len(pandas2ri.ri2py(detP))==2:
-            detP_py=self.IDAT_Processor.ri2py_dataframe(detP[0], matrix=False)
+        #try:
+        #    lens= len(pandas2ri.ri2py(detP))
+        #except:
+        lens= len(detP)
+        
+        
+        if lens==6:
+            detP_py=self.IDAT_Processor.ri2py_dataframe(detP[0], matrix=True,rownames=detP[1], colnames=detP[2])
 
-            detP_keep_py=self.IDAT_Processor.ri2py_dataframe(detP[1], matrix=False)
-
+            detP_keep_py=self.IDAT_Processor.ri2py_dataframe(detP[3], matrix=True,rownames=detP[4], colnames=detP[5])
+                         
             detP_py=detP_py.transpose()
             detP_py=pd.DataFrame(detP_py.mean(axis=1),columns=['mean'], index=detP_py.index)
             detP_keep_py=detP_keep_py.transpose()
             detP_keep_py=pd.DataFrame(detP_keep_py.mean(axis=1),columns=['mean'], index=detP_keep_py.index)
-
-            if len(np.transpose(pandas2ri.ri2py(detP[0])))!=len(np.transpose(pandas2ri.ri2py(detP[1]))):
+            #return pheno_py, detP_py, detP_keep_py, detP
+                           
+            if len(np.transpose(detP_py))!=len(np.transpose(detP_keep_py)):
                 bad_ind=[x for x in detP_py.index.tolist() if x not in detP_keep_py.index.tolist()]
                 detP_bad_py=detP_py.loc[bad_ind]
                 detP_bad_py=pd.DataFrame(detP_bad_py.mean(axis=1),columns=['mean'], index=detP_bad_py.index)
-
+            #except:
+            #    if len(np.transpose(detP[0]))!=len(np.transpose(detP[1])):
+            #        bad_ind=[x for x in detP_py.index.tolist() if x not in detP_keep_py.index.tolist()]
+            #        detP_bad_py=detP_py.loc[bad_ind]
+            #        detP_bad_py=pd.DataFrame(detP_bad_py.mean(axis=1),columns=['mean'], index=detP_bad_py.index)
             detP_py['ID']=pheno_py['ID'].to_numpy()
 
 
@@ -320,9 +337,10 @@ class Plotter:
 
                 detP_bad_py['case_ID']=pheno_py[pheno_py['ID'].isin(detP_bad_py.index)]['case_ID'].to_numpy()
 
-
-        elif len(pandas2ri.ri2py(detP))==1:
-            detP_py=self.IDAT_Processor.ri2py_dataframe(detP[0], matrix=False)
+        
+        
+        elif lens==3:
+            detP_py=self.IDAT_Processor.ri2py_dataframe(detP[0], matrix=True,rownames=detP[1], colnames=detP[2])
             detP_py['ID']=pheno_py['ID'].to_numpy()
 
 
@@ -330,7 +348,7 @@ class Plotter:
 
             detP_py['case_ID']=pheno_py['case_ID'].to_numpy()
         
-        if plot== 'all' and len(pandas2ri.ri2py(detP))==2:
+        if plot== 'all' and lens==6:
 
 
             s1 = figure(
@@ -455,7 +473,7 @@ class Plotter:
 
 
 
-        if plot== 'all' and len(pandas2ri.ri2py(detP))==1:
+        if plot== 'all' and lens==31:
 
 
             p = figure(
@@ -536,7 +554,7 @@ class Plotter:
             return
 
 
-        if plot== 'goodsamples' and len(pandas2ri.ri2py(detP))==2:
+        if plot== 'goodsamples' and lens==6:
             p = figure(
                 tools="hover,pan,wheel_zoom,save",
                 toolbar_location="above",
@@ -574,7 +592,7 @@ class Plotter:
             show(p)
             return
 
-        if plot== 'goodsamples' and len(pandas2ri.ri2py(detP))==1:
+        if plot== 'goodsamples' and lens==3:
             print('no goodsamples present')
             return
 
@@ -714,12 +732,18 @@ class Plotter:
     def plot_qc_minfi_report(self, output_dir, diseasegroup='disease', samplenames='ID'):
         check_list=[diseasegroup, samplenames]
         for val in check_list:
-            if val not in pandas2ri.ri2py(robjects.r['as'](self.IDAT_Processor.pheno,'data.frame')).columns.tolist():
-                print('The pheno sheet does not contain a '+diseasegroup+' or '+samplenames+' column you specified \n'
-                     'These are the available column names:')
-                print(pandas2ri.ri2py(robjects.r['as'](self.IDAT_Processor.pheno,'data.frame')).columns.tolist())
-                return
-
+            try:
+                if val not in pandas2ri.ri2py(robjects.r['as'](self.IDAT_Processor.pheno,'data.frame')).columns.tolist():
+                    print('The pheno sheet does not contain a '+diseasegroup+' or '+samplenames+' column you specified \n'
+                         'These are the available column names:')
+                    print(pandas2ri.ri2py(robjects.r['as'](self.IDAT_Processor.pheno,'data.frame')).columns.tolist())
+                    return
+            except:
+                if val not in robjects.r['as'](self.IDAT_Processor.pheno,'data.frame').columns.tolist():
+                    print('The pheno sheet does not contain a '+diseasegroup+' or '+samplenames+' column you specified \n'
+                         'These are the available column names:')
+                    print(robjects.r['as'](self.IDAT_Processor.pheno,'data.frame').columns.tolist())
+                    return
         self.IDAT_Processor.minfi.qcReport(self.IDAT_Processor.RGset,
                             sampNames=pandas2ri.ri2py(self.IDAT_Processor.pheno)[samplenames],
                             sampGroups=pandas2ri.ri2py(self.IDAT_Processor.pheno)[diseasegroup],
@@ -758,7 +782,10 @@ class Plotter:
              return(result)
             }""")(RGset, nmax)
 
-        m=numpy2ri.ri2py(pcs)
+        try:            
+            m=numpy2ri.ri2py(pcs)
+        except:
+             m=self.IDAT_Processor.__r_to_py__(pcs) 
         df=pd.DataFrame(np.array(m)).transpose()
 
 
@@ -798,8 +825,8 @@ class Plotter:
         if not matrix or not pheno:
             print('Please input data')
             return
-
-        cxy = robjects.r("""function (pcs, matrix, pheno,ids) {
+        r_matrix=self.IDAT_Processor.__py_to_r__(matrix)
+        cxy = robjects.r("""function (pcs, matrix, pheno, ids) {
              if (ids!=FALSE)rownames(pheno)<-pheno[,ids]
 
              keep<-intersect(colnames(matrix),rownames(pheno))
@@ -820,9 +847,9 @@ class Plotter:
              cxy <- round(cor(pc$x, scale(df)),2)
 
              return(cxy)
-            }""")(pcs, matrix, pheno,ids)
+            }""")(pcs, r_matrix, pheno,ids)
 
-
+         
         corr=self.IDAT_Processor.ri2py_dataframe(cxy, matrix=False)
 
         f, ax = plt.subplots(figsize=(10, 7))

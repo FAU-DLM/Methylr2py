@@ -5,6 +5,8 @@ from rpy2.robjects import r
 import rpy2.robjects.packages as rpackages
 from pymethylprocess.MethylationDataTypes import *
 from rpy2.robjects import pandas2ri, numpy2ri
+from rpy2.robjects.conversion import localconverter
+from rpy2.robjects import pandas2ri
 import pickle
 import sqlite3
 import os, glob, subprocess
@@ -23,8 +25,8 @@ from bokeh.models import NumeralTickFormatter
 import methylcheck
 from scipy.special import comb
 PATH="/home/Deep_Learner/private/third_party_repos/Methylr2py/manifest/EPIC.hg19.manifest.tsv.gz" ###--->can be downloaded here :"http://zwdzwd.io/InfiniumAnnotation/current/EPIC/"
-pandas2ri.activate()
-numpy2ri.activate()
+#pandas2ri.activate()
+#numpy2ri.activate()
 
 
 class PreProcessIDATs:
@@ -90,7 +92,7 @@ class PreProcessIDATs:
                 self.RGset=self.__load_idats_parallel(targets=self.pheno,verbose=verbose,extended=extended,nworkers=nworkers)
                 
             else:    
-                self.RGset = self.minfi.read_metharray_exp(targets=self.pheno, extended=extended)
+                self.RGset = self.minfi.read_metharray_exp(targets=self.pheno, extended=extended, force=True)
                 
         
         if rename_samples:
@@ -103,9 +105,9 @@ class PreProcessIDATs:
             robjects.r('saveRDS')(self.RGset,cache_storage_path) 
         self.RGset_orig=self.RGset    
         self.pheno_orig=self.pheno
-        self.pheno_orig_py=self.ri2py_dataframe(self.pheno_orig, matrix=True)
+        self.pheno_orig_py=self.ri2py_dataframe(self.pheno_orig, matrix=False)
             
-    
+       
     def __load_idats_parallel(self, targets, verbose=True, extended=True, nworkers=2 ):       
         targets=targets
         verbose=verbose
@@ -136,7 +138,7 @@ class PreProcessIDATs:
                     ##these need to be loaded on the worker nodes explicitly for BatchJobs!
                     requireNamespace("minfi")
                     requireNamespace("Biobase")
-                    read.metharray.exp(targets = x, extended=extended)
+                    read.metharray.exp(targets = x, extended=extended, force=TRUE)
                 }
 
                 if(verbose)cat("Reading multiple idat-files in parallel")
@@ -147,7 +149,7 @@ class PreProcessIDATs:
                 if(verbose)cat("Combining the RGsets to one big RGset")
                 rgSet <- res[[1]]
                 
-                for (i in 2:length(res)) rgSet <- combine(rgSet, res[[i]])
+                for (i in 2:length(res)) rgSet <- combineArrays(rgSet, res[[i]])
                 return(rgSet)
             }
         
@@ -174,14 +176,23 @@ class PreProcessIDATs:
     
     def getQC(self, addQC=False, phenotype=None, RGset=None):        
         
-        RGset=RGset if RGset else self.RGset
-        pheno= robjects.r("pData")(RGset)
-        if phenotype is not None:            
-            if phenotype not in pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist():
-                print('The pheno sheet does not contain a '+phenotype+' column you specified \n'
-                         'These are the available column names:')
-                print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
-                return None, None, None, None
+        RGset = RGset if RGset else self.RGset
+        pheno = robjects.r("pData")(RGset)
+        pheno = robjects.r['as'](pheno, 'data.frame')
+        if phenotype is not None:    
+            #try:
+            #    if phenotype not in pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist():
+            #        print('The pheno sheet does not contain a '+phenotype+' column you specified \n'
+            #                 'These are the available column names:')
+            #        print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
+            #        return None, None, None, None
+            #except:robjects.r['as'](robjects.r("pData")(preproidat.RGset),'data.frame')
+            if phenotype not in pd.DataFrame(pheno).columns.tolist():
+                 print('The pheno sheet does not contain a '+phenotype+' column you specified \n'
+                       'These are the available column names:')
+                 print(pd.DataFrame(pheno).columns.tolist())
+                 return None, None, None, None
+                
         
         MSet = self.minfi.preprocessRaw(RGset)
         qc,cols,rows=robjects.r("""function ( MSet ) {
@@ -191,20 +202,42 @@ class PreProcessIDATs:
         return(result)
              }""")(MSet)          
         
-        data_py=self.ri2py_dataframe(qc, matrix=True)
+        #try: 
+        #    data_py = self.ri2py_dataframe(qc, matrix=False)
+        #except: 
+        #    data_py= pd.DataFrame(robjects.r['as'](qc,'data.frame'))
         
-        rows_py=pd.Series(pandas2ri.ri2py(rows))
-        cols_py=pd.Series(pandas2ri.ri2py(cols))
-        datfr=pd.DataFrame(data_py.to_numpy(),index=rows_py,columns=cols_py)
-        if addQC:            
-            pheno=pd.concat([pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')), data_py], axis=1, sort=False)
-            self.pheno=pandas2ri.py2ri(pheno)
+        datfr=data_py=self.ri2py_dataframe(robjects.r['as'](qc,'data.frame'), matrix=True, colnames=cols, rownames=rows)
+        
+        
+        #try:
+        #    rows_py=pd.Series(pandas2ri.ri2py(rows))
+        #    cols_py=pd.Series(pandas2ri.ri2py(cols))
+        #    datfr=pd.DataFrame(data_py.to_numpy(),index=rows_py,columns=cols_py)
+        #except:
+        #    rows_py=pd.Series(rows)
+        #   cols_py=pd.Series(cols)
+        #    datfr=pd.DataFrame(data_py.to_numpy(),index=rows_py,columns=cols_py)
+            
+        if addQC:  
+            #try:
+            #    pheno=pd.concat([pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')), data_py], axis=1, sort=False)
+            #    self.pheno=pandas2ri.py2ri(pheno)
+            #except:   
+            pheno=pd.concat([pd.DataFrame(pheno), data_py], axis=1, sort=False)
+            self.pheno=pd.DataFrame(pheno)
         
         if phenotype is not None:
-            try:       
-                datfr[phenotype]=pd.DataFrame(pandas2ri.ri2py(pheno))[phenotype].to_numpy()
-            except:
-                datfr[phenotype]=pd.DataFrame(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame'))[phenotype]).to_numpy()
+            #try:
+            #try:       
+            datfr[phenotype]=pd.DataFrame(pheno)[phenotype].to_numpy()
+            #except:
+            #    datfr[phenotype]=pd.DataFrame(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame'))[phenotype]).to_numpy()
+            #except:  
+            #    try:       
+            #        datfr[phenotype]=pd.DataFrame(pheno)[phenotype].to_numpy()
+            #    except:
+            #        datfr[phenotype]=pd.DataFrame(robjects.r['as'](pheno,'data.frame')[phenotype]).to_numpy()
         
         self.QC_df=datfr
         if phenotype is not None:
@@ -236,11 +269,17 @@ class PreProcessIDATs:
     
     def compute_betas(self, Object):
         """Get beta value matrix from minfi after finding RSet."""       
-                
-        beta = self.minfi.getBeta(Object)
-        beta_py = self.ri2py_dataframe(beta)
         
-        return beta_py , beta   
+        beta, rownames, colnames=robjects.r("""function (Object) 
+            {                        
+            beta=getBeta(Object)            
+            return(list(beta,rownames(beta), colnames(beta)))
+            }""")(Object)             
+        
+        #beta = self.minfi.getBeta(Object)
+        beta_py = self.ri2py_dataframe(beta, matrix=True, rownames=rownames, colnames=colnames)
+        
+        return beta_py, beta   
     
     
     def compute_mvals(self, Object):
@@ -255,13 +294,29 @@ class PreProcessIDATs:
                     }             
             }""")(Object) 
 
-        if pandas2ri.ri2py(rgset):
-            mval = self.minfi.getM(self.minfi.preprocessRaw(Object))        
+        try: 
+            trier=pandas2ri.ri2py(rgset)
+        except:
+            trier= rgset
+        
+        if trier:
+            mval, rownames, colnames=robjects.r("""function (Object) 
+            {                        
+            methset=preprocessRaw(Object)  
+            mval=getM(methset)
+            return(list(mval,rownames(mval), colnames(mval)))
+            }""")(Object)              
+            #mval = self.minfi.getM(self.minfi.preprocessRaw(Object))        
         
         else:
-            mval = self.minfi.getM(Object)
+            mval, rownames, colnames=robjects.r("""function (Object) 
+            {                        
+            mval=getM(Object)            
+            return(list(mval,rownames(mval), colnames(mval))
+            }""")(Object)
+            #mval = self.minfi.getM(Object)
             
-        mval_py = self.ri2py_dataframe(mval)
+        mval_py = self.ri2py_dataframe(mval,matrix=True, rownames=rownames, colnames=colnames)
         
         return mval_py, mval 
           
@@ -270,18 +325,56 @@ class PreProcessIDATs:
             RGset = self.RGset
             
         # calculate the detection p-values
-        detP =robjects.r("detectionP")(RGset) 
+        detP, rownames, colnames=robjects.r("""function (Object) 
+            {                        
+            detP=detectionP(Object)            
+            return(list(detP,rownames(detP), colnames(detP)))
+            }""")(RGset)
        
-        detP_py=self.ri2py_dataframe(detP, matrix=False)
-        return detP,detP_py   
+        detP_py=self.ri2py_dataframe(detP, matrix=True,rownames=rownames, colnames=colnames)
+        return detP,detP_py    
     
-    def ri2py_dataframe(self, r_dat, matrix=False):
+    
+    
+    # Converters    
+            
+    def __r_to_py__(self, object_):
+        if isinstance(object_, robjects.DataFrame):
+            with localconverter(pandas2ri.converter):
+                py_object_ = robjects.conversion.rpy2py(object_)
+            return py_object_
+        return object_
+    
+    
+    def __py_to_r__(self, object_):       
+         r_object_ = robjects.conversion.py2rpy(object_)
+         return r_object_    
+        
+    def pandas_to_rpy2(self, df):
+        try: # v2.x
+            return pandas2ri.py2ri(df)
+        except AttributeError: # v3.x
+            with localconverter(robjects.default_converter + pandas2ri.converter):
+                return robjects.conversion.py2rpy(df)
+    def rpy2_to_pandas(self, r_df):
+        try: # v2.x
+            return pandas2ri.ri2py(r_df)
+        except AttributeError: # v3.x
+            with localconverter(robjects.default_converter + pandas2ri.converter):
+                return robjects.conversion.rpy2py(r_df)
+    
+    def ri2py_dataframe(self, r_dat, matrix=False, rownames=None, colnames=None):
         if matrix:
-            py_dat=pd.DataFrame(pandas2ri.ri2py(robjects.r['as'](r_dat,'data.frame')))
+            py_dat=pd.DataFrame(self.__r_to_py__(r_dat))
+            py_dat=pd.DataFrame(r_dat,
+                index=rownames,
+                columns=colnames)
+            #py_dat=pd.DataFrame(pandas2ri.ri2py(robjects.r['as'](r_dat,'data.frame')))
         elif not matrix:
-            py_dat=pd.DataFrame(pandas2ri.ri2py(r_dat),
-                index=numpy2ri.ri2py(robjects.r("rownames")(r_dat)),
-                columns=numpy2ri.ri2py(robjects.r("colnames")(r_dat)))
+            py_dat=pd.DataFrame(self.__r_to_py__(r_dat))
+            #py_dat=pd.DataFrame(pandas2ri.ri2py(r_dat),
+            #    index=numpy2ri.ri2py(robjects.r("rownames")(r_dat)),
+            #    columns=numpy2ri.ri2py(robjects.r("colnames")(r_dat)))
         return py_dat  
     
      
@@ -300,11 +393,17 @@ class PreProcessIDATs:
              else return(FALSE)                
             }""")(obj)   
         
-        if not pandas2ri.ri2py(grset):          
-            if (verbose):    
-                print('sorry obj needs to be of type "GenomicRatioSet"...')             
-            return None
         
+        try:
+            if not pandas2ri.ri2py(grset):          
+                if (verbose):    
+                    print('sorry obj needs to be of type "GenomicRatioSet"...')             
+                return None
+        except:
+            if not grset:          
+                if (verbose):    
+                    print('sorry obj needs to be of type "GenomicRatioSet"...')             
+                return None
         if detP:
             detP=detP  
         else:
@@ -366,7 +465,7 @@ class PreProcessIDATs:
                 return(obj)
                 
                  }""")(obj, ProbeCutoff, detP, detPcut, SampleCutoff,verbose ) 
-        pheno= robjects.r("pData")(GRset)
+        pheno = robjects.r("pData")(GRset)
         return GRset, pheno
     
     
@@ -587,6 +686,7 @@ class PreProcessIDATs:
             
                 self.insert_cell_types()
             pheno=robjects.r("pData")(self.GRset)
+            pheno = robjects.r['as'](pheno, 'data.frame')
             return self.GRset, pheno
 
 
@@ -609,6 +709,7 @@ class PreProcessIDATs:
             
                 self.insert_cell_types()
             pheno=robjects.r("pData")(self.GRset)
+            pheno = robjects.r['as'](pheno, 'data.frame')
             return self.GRset, pheno   
     
     def preprocessNoob(self,celltype_adoption=False, use_cell_count2=False, nPCs=2, RGset=None):
@@ -631,6 +732,7 @@ class PreProcessIDATs:
             
             self.insert_cell_types()
         pheno=robjects.r("pData")(self.GRset)
+        pheno = robjects.r['as'](pheno, 'data.frame')
         return self.GRset, pheno 
 
     def est_cell_counts(self,RGset=None,**kwargs):
@@ -688,10 +790,18 @@ class PreProcessIDATs:
 
 
     def insert_cell_types(self):
-            celltypes=pd.DataFrame(pandas2ri.ri2py(self.NeunC), columns=['Glia','Neurons'])
-            #pheno=pd.concat([pandas2ri.ri2py(robjects.r['as'](self.pheno,'data.frame')), celltypes], axis=1, sort=False)
-            celltypes_ri=pandas2ri.py2ri(celltypes)  
-            #self.pheno=pandas2ri.py2ri(pheno)    
+            try:
+                celltypes=pd.DataFrame(pandas2ri.ri2py(self.NeunC), columns=['Glia','Neurons'])
+                #pheno=pd.concat([pandas2ri.ri2py(robjects.r['as'](self.pheno,'data.frame')), celltypes], axis=1, sort=False)
+                celltypes_ri=pandas2ri.py2ri(celltypes)  
+                #self.pheno=pandas2ri.py2ri(pheno)    
+            except:
+                celltypes=pd.DataFrame(self.NeunC, columns=['Glia','Neurons'])
+                #pheno=pd.concat([pandas2ri.ri2py(robjects.r['as'](self.pheno,'data.frame')), celltypes], axis=1, sort=False)
+                #celltypes_ri=robjects.conversion.py2rpy(celltypes)    
+                celltypes_ri=self.__py_to_r__(celltypes)
+                #self.pheno=pandas2ri.py2ri(pheno)    
+                
             self.RGset,self.GRset, self.pheno=robjects.r("""function (RGset,GRset, celltypes) {        
                 .pDataAdd <- function(object, df) {
                     stopifnot(is(df, "data.frame") || is(df, "DataFrame"))
@@ -943,14 +1053,23 @@ class PreProcessIDATs:
              
             }""")(GRset, obj)
         
+        try:
+            if len(pandas2ri.ri2py(result))>1:            
+                GRset=result[0]
+                obj=result[1]
+                return GRset, obj
+            else:
+                GRset=result[0]
+                return GRset, None
+        except:   
+            if len(result)>1:            
+                GRset=result[0]
+                obj=result[1]
+                return GRset, obj
+            else:
+                GRset=result[0]
+                return GRset, None
        
-        if len(pandas2ri.ri2py(result))>1:            
-            GRset=result[0]
-            obj=result[1]
-            return GRset, obj
-        else:
-            GRset=result[0]
-            return GRset, None
     
     def filterXY(self, obj=None):
         # if your data includes males and females, remove probes related to the sex chromosomes 
@@ -1018,11 +1137,16 @@ class PreProcessIDATs:
                     return(FALSE)
                     }             
             }""")(obj) 
-
-        if pandas2ri.ri2py(rgset):
-            print('Sorry this does not work with RGChannelSets, please use "GenomicRatioSet", "MethySets" , "RatioSets", "Mvals" or "betas"! ')
-            return obj                 
         
+        try:
+
+            if pandas2ri.ri2py(rgset):
+                print('Sorry this does not work with RGChannelSets, please use "GenomicRatioSet", "MethySets" , "RatioSets", "Mvals" or "betas"! ')
+                return obj                 
+        except:
+            if rgset:
+                print('Sorry this does not work with RGChannelSets, please use "GenomicRatioSet", "MethySets" , "RatioSets", "Mvals" or "betas"! ')
+                return obj        
                 
         if excludeXreactiveprobes:
             if verbose:
@@ -1041,13 +1165,19 @@ class PreProcessIDATs:
              else return(FALSE)                
             }""")(obj)   
         
-        if dropSnPs and not pandas2ri.ri2py(grset):
-            _,obj=self.dropLociWithSnps(GRset=GRset, obj=obj)
-            
-            
-        elif dropSnPs and pandas2ri.ri2py(grset):
-            obj,_=self.dropLociWithSnps(GRset=obj)
-            #self.GRset=obj           
+        
+        try:
+            testeer=pandas2ri.ri2py(grset)
+        except:   
+            testeer=grset
+        
+        if dropSnPs and not testeer:
+                _,obj=self.dropLociWithSnps(GRset=GRset, obj=obj)
+       
+        
+        elif dropSnPs and testeer:
+                obj,_=self.dropLociWithSnps(GRset=obj)
+       
         
         if mask_probes:
             if verbose:
@@ -1078,8 +1208,12 @@ class PreProcessIDATs:
             }""")(obj)      
         #if pandas2ri.ri2py(gmset):   
                  # self.GMset=obj 
-        if pandas2ri.ri2py(gmset) or pandas2ri.ri2py(rset) or pandas2ri.ri2py(mset) or pandas2ri.ri2py(grset):
-            pheno=robjects.r("pData")(obj)
+        try:    
+            if pandas2ri.ri2py(gmset) or pandas2ri.ri2py(rset) or pandas2ri.ri2py(mset) or pandas2ri.ri2py(grset):
+                pheno=robjects.r("pData")(obj)
+        except:
+            if gmset or rset or mset or grset:
+                pheno=robjects.r("pData")(obj)
         
         else:
             
@@ -2752,7 +2886,10 @@ class PreProcessIDATs:
                     
                     self.sub_pheno_py=pheno_py
 
-                    pheno=pandas2ri.py2ri(self.sub_pheno_py)
+                    try:                        
+                        pheno=pandas2ri.py2ri(self.sub_pheno_py)
+                    except:
+                        pheno=self.__py_to_r__(self.sub_pheno_py)
                     self.sub_pheno=pheno                             
 
                 
@@ -2764,7 +2901,10 @@ class PreProcessIDATs:
                         
                     self.sub_pheno_py=pheno_py
 
-                    pheno=pandas2ri.py2ri(self.sub_pheno_py)
+                    try:                        
+                        pheno=pandas2ri.py2ri(self.sub_pheno_py)
+                    except:
+                        pheno=self.__py_to_r__(self.sub_pheno_py)
                     self.sub_pheno=pheno               
                 
             
@@ -2805,7 +2945,10 @@ class PreProcessIDATs:
             if not phenotype:
                 print('Please specify a target of interest \n'
                     'These are the available column names:')
-                print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
+                try:
+                    print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
+                except:
+                    print(robjects.r['as'](pheno,'data.frame').columns.tolist())
                 return None
             try:
                 pheno_py=self.ri2py_dataframe(pheno, matrix=True)
@@ -2822,17 +2965,26 @@ class PreProcessIDATs:
                 
                 
             pheno_py=self.sub_pheno_py  
-            pheno=pandas2ri.py2ri(self.sub_pheno_py)
-            
+            try:
+                pheno=pandas2ri.py2ri(self.sub_pheno_py)
+            except:
+                pheno=self.__py_to_r_(self.sub_pheno_py)
+                    
             py_array=pheno_py[phenotype].unique()
-            r_array=numpy2ri.py2ri(py_array)
+            try:
+                r_array=numpy2ri.py2ri(py_array)
+            except:
+                r_array=self.__py_to_r__(py_array)
             numeric=[]
             categorical=[]
             if adjust_vars:
 
                 if not type(adjust_vars)==list:
                     print('Please provide a list specifying your adjustment variables obtained from the pheno_sheet \n')
-                    print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
+                    try:
+                        print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
+                    except:    
+                        print(robjects.r['as'](pheno,'data.frame').columns.tolist())
                     return None, None, None
 
 
@@ -2854,8 +3006,11 @@ class PreProcessIDATs:
             if correction_vars:
 
                 if not type(correction_vars)==list:
-                    print('Please provide a list specifying your correction variables obtained from the pheno_sheet \n')
-                    print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
+                    print('Please provide a list specifying your correction variables obtained from the pheno_sheet \n')                   
+                    try:
+                        print(pandas2ri.ri2py(robjects.r['as'](pheno,'data.frame')).columns.tolist())
+                    except:    
+                        print(robjects.r['as'](pheno,'data.frame').columns.tolist())
                     return None, None, None
 
 
@@ -2915,9 +3070,12 @@ class PreProcessIDATs:
                 self.sub_mval_py=done[0]
                 self.sub_beta_py=done[1]
                 
-                self.sub_beta=pandas2ri.py2ri(self.sub_beta_py)
-                self.sub_mval=pandas2ri.py2ri(self.sub_mval_py)
-                
+                try:
+                    self.sub_beta=pandas2ri.py2ri(self.sub_beta_py)
+                    self.sub_mval=pandas2ri.py2ri(self.sub_mval_py)
+                except:
+                    self.sub_beta=self.__py_to_r_(self.sub_beta_py)
+                    self.sub_mval=self.__py_to_r_(self.sub_mval_py)
                 matrix = robjects.r("""function(matrix, mval ){
 
                 matrix <- matrix[intersect(rownames(mval),rownames(matrix)), ]              
@@ -3170,7 +3328,10 @@ class PreProcessIDATs:
             return(ann450k)
             
             }""")(self.RGset)
-        self.annotation_py=pandas2ri.ri2py(robjects.r['as'](self.annotation,'data.frame'))
+        try:
+            self.annotation_py=pandas2ri.ri2py(robjects.r['as'](self.annotation,'data.frame'))
+        except:            
+            self.annotation_py=robjects.r['as'](self.annotation,'data.frame')    
         return self.annotation_py  
         
         
