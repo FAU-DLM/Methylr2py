@@ -90,7 +90,7 @@ class PreProcessIDATs:
                 self.RGset=self.__load_idats_parallel(targets=self.pheno,verbose=verbose,extended=extended,nworkers=nworkers)
                 
             else:    
-                self.RGset = self.minfi.read_metharray_exp(targets=self.pheno, extended=extended)
+                self.RGset = self.minfi.read_metharray_exp(targets=self.pheno, extended=extended, force=True)
                 
         
         if rename_samples:
@@ -136,7 +136,7 @@ class PreProcessIDATs:
                     ##these need to be loaded on the worker nodes explicitly for BatchJobs!
                     requireNamespace("minfi")
                     requireNamespace("Biobase")
-                    read.metharray.exp(targets = x, extended=extended)
+                    read.metharray.exp(targets = x, extended=extended, force=TRUE)
                 }
 
                 if(verbose)cat("Reading multiple idat-files in parallel")
