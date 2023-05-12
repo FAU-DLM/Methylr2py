@@ -1,10 +1,19 @@
 # Methylr2py
 Python wrapped R packages for methylation array analysis.
 
-This repo contains code to perform methylation array analysis as used for the following publication.
+This repo contains code to perform methylation array analysis as used for the following publications:
 
-Title: Mosaic trisomy of chromosome 1q in human brain tissue associates with unilateral polymicrogyria, very early-onset focal epilepsy, and severe developmental delay.
-       "bioRxiv 2020.07.16.206490; doi: https://doi.org/10.1101/2020.07.16.206490"
+
+Kobow, K., Jabari, S., Pieper, T. et al. Mosaic trisomy of chromosome 1q in human brain tissue associates with unilateral polymicrogyria, very early-onset focal epilepsy, and severe developmental delay. Acta Neuropathol 140, 881–891 (2020). 
+https://doi.org/10.1007/s00401-020-02228-5
+
+Jabari, S., Kobow, K., Pieper, T. et al. DNA methylation-based classification of malformations of cortical development in the human brain. Acta Neuropathol 143, 93–104 (2022). 
+https://doi.org/10.1007/s00401-021-02386-0
+
+Hoffmann, L., Coras, R., Kobow, K. et al. Ganglioglioma with adverse clinical outcome and atypical histopathological features were defined by alterations in PTPN11/KRAS/NF1 and other RAS-/MAP-Kinase pathway genes. Acta Neuropathol 145, 815–827 (2023). 
+https://doi.org/10.1007/s00401-023-02561-5
+      
+       
 
  We have taken some freely available R packages such as
 'minfi'
